@@ -1,4 +1,6 @@
 import copy
+from collections import deque
+
 _sizes = {
     3: [10, 1],
     4: [15, 0],
@@ -22,6 +24,7 @@ class Tak:
         self.white_capstones = _sizes[board_size][1]
         self.black_capstones = _sizes[board_size][1]
         self.turn = 0
+        self.move_history = []
         for i in range(board_size):
             row = []
             for j in range(board_size):
@@ -180,6 +183,7 @@ class Tak:
     def make_move(self, move: str):
         numbers = {'1': 0, '2': 1, '3': 2, '4': 3, '5': 4, '6': 5, '7': 6, '8': 7}
         letters = {'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4, 'f': 5, 'g': 6, 'h': 7}
+        initial_turn = self.turn
         is_movement = False
         if self.turn in [4, 5, 6]:
             raise ValueError('game is already finished ' + move)
@@ -202,6 +206,13 @@ class Tak:
                             self.white_stones -= 1
                             self.board[position_y][position_x].append(2)
                             self._advance_turn()
+                            moveInfo = {
+                                'type': 'place_stone',
+                                'position': (position_x, position_y),
+                                'stone_type': 2,
+                                'prev_turn': initial_turn
+                            }
+                            self.move_history.append(moveInfo)
                             return
                         else:
                             raise ValueError('Space is already occupied  ' + move)
@@ -213,6 +224,13 @@ class Tak:
                             self.black_stones -= 1
                             self.board[position_y][position_x].append(3)
                             self._advance_turn()
+                            moveInfo = {
+                                'type': 'place_stone',
+                                'position': (position_x, position_y),
+                                'stone_type': 3,
+                                'prev_turn': initial_turn
+                            }
+                            self.move_history.append(moveInfo)
                             return
                         else:
                             raise ValueError('Space is already occupied  ' + move)
@@ -230,6 +248,13 @@ class Tak:
                             self.white_capstones -= 1
                             self.board[position_y][position_x].append(4)
                             self._advance_turn()
+                            moveInfo = {
+                                'type': 'place_stone',
+                                'position': (position_x, position_y),
+                                'stone_type': 4,
+                                'prev_turn': initial_turn
+                            }
+                            self.move_history.append(moveInfo)
                             return
                         else:
                             raise ValueError('Space is already occupied  ' + move)
@@ -241,6 +266,13 @@ class Tak:
                             self.black_capstones -= 1
                             self.board[position_y][position_x].append(5)
                             self._advance_turn()
+                            moveInfo = {
+                                'type': 'place_stone',
+                                'position': (position_x, position_y),
+                                'stone_type': 5,
+                                'prev_turn': initial_turn
+                            }
+                            self.move_history.append(moveInfo)
                             return
                         else:
                             raise ValueError('Space is already occupied  ' + move)
@@ -256,6 +288,13 @@ class Tak:
                             self.white_stones -= 1
                             self.board[position_y][position_x].append(0)
                             self._advance_turn()
+                            moveInfo = {
+                                'type': 'place_stone',
+                                'position': (position_x, position_y),
+                                'stone_type': 0,
+                                'prev_turn': initial_turn
+                            }
+                            self.move_history.append(moveInfo)
                             return
                         else:
                             raise ValueError('Space is already occupied  ' + move)
@@ -267,6 +306,13 @@ class Tak:
                             self.black_stones -= 1
                             self.board[position_y][position_x].append(1)
                             self._advance_turn()
+                            moveInfo = {
+                                'type': 'place_stone',
+                                'position': (position_x, position_y),
+                                'stone_type': 1,
+                                'prev_turn': initial_turn
+                            }
+                            self.move_history.append(moveInfo)
                             return
                         else:
                             raise ValueError('Space is already occupied  ' + move)
@@ -326,6 +372,7 @@ class Tak:
                 x_modifier = -1
             elif direction == '>':
                 x_modifier = 1
+            smashed_stone = False
             for i, amount in enumerate(carry_pattern):
                 for j in range(amount):
                     stone_to_move = stones_to_move[-1]
@@ -335,12 +382,22 @@ class Tak:
                         if top_stone in [2, 3]:
                             if stone_to_move in [4, 5]:
                                 self.board[position_y + (i + 1) * y_modifier][position_x + (i + 1) * x_modifier][-1] -= 2
+                                smashed_stone = True
                             else:
                                 raise ValueError('Cannot move non capstone onto wall ' + move)
                         if top_stone in [4, 5]:
                             raise ValueError('Cannot onto capstone ' + move)
                     self.board[position_y + (i + 1) * y_modifier][position_x + (i + 1) * x_modifier].append(stones_to_move.pop())
             self._advance_turn()
+            moveInfo = {
+                'type': 'move_stack',
+                'position': (position_x, position_y),
+                'carry_pattern': carry_pattern,
+                'direction': direction,
+                'smashed_stone': smashed_stone,
+                'prev_turn': initial_turn
+            }
+            self.move_history.append(moveInfo)
             return
         raise ValueError('Invalid PTN format  ' + move)
 
@@ -468,8 +525,8 @@ class Tak:
         return legal_moves
 
 
-    def get_all_legal_moves(self, filtering=-1):
-        numbers = {0: '1', 1:'2', 2:'3', 3:'4', 4:'5', 5:'6', 6:'7', 7:'8'}
+    def _get_all_moves_base(self):
+        numbers = {0: '1', 1: '2', 2: '3', 3: '4', 4: '5', 5: '6', 6: '7', 7: '8'}
         letters = {0: 'a', 1: 'b', 2: 'c', 3: 'd', 4: 'e', 5: 'f', 6: 'g', 7: 'h'}
         legal_moves = []
         if self.turn in [4, 5, 6]:
@@ -478,19 +535,27 @@ class Tak:
         for y in range(self.board_size):
             for x in range(self.board_size):
                 if not self.board[y][x]:
-                    #handle stone placement
+                    # handle stone placement
                     legal_moves.append(letters[x] + numbers[y])
                     if self.turn in [2, 3]:
-                        #if not first turn, add walls
+                        # if not first turn, add walls
                         legal_moves.append('S' + letters[x] + numbers[y])
-                        if (self.turn == 2 and self.white_capstones > 0) or (self.turn == 3 and self.black_capstones > 0):
-                            #if capstones available, add capstones
+                        if (self.turn == 2 and self.white_capstones > 0) or (
+                                self.turn == 3 and self.black_capstones > 0):
+                            # if capstones available, add capstones
                             legal_moves.append('C' + letters[x] + numbers[y])
                 elif do_movement:
                     # if doing movement, and there is at least 1 stone on the current stack, handle movement
-                    if (self.turn == 2 and self.board[y][x][-1] in [0, 2, 4]) or (self.turn == 3 and self.board[y][x][-1] in [1, 3, 5]):
-                        #check if the stack is under control of the current mover
+                    if (self.turn == 2 and self.board[y][x][-1] in [0, 2, 4]) or (
+                            self.turn == 3 and self.board[y][x][-1] in [1, 3, 5]):
+                        # check if the stack is under control of the current mover
                         legal_moves.extend(self._handle_movement_enumeration(x, y))
+        return legal_moves
+
+
+
+    def get_all_legal_moves(self, filtering=-1):
+        legal_moves = self._get_all_moves_base()
         if filtering == -1:
             return legal_moves
         return self._filter_recursive(legal_moves, include_result=False, remaining_depth=filtering)
@@ -504,13 +569,57 @@ class Tak:
         new_game.white_capstones = self.white_capstones
         new_game.black_capstones = self.black_capstones
         new_game.board = copy.deepcopy(self.board)
+        new_game.move_history = copy.deepcopy(self.move_history)
         return new_game
+
+    def undo_move(self):
+        last_move = self.move_history.pop()
+        self.turn = last_move['prev_turn']
+        if last_move['type'] == 'place_stone':
+            x, y = last_move['position']
+            self.board[y][x].pop()
+            match last_move['stone_type']:
+                case 0:
+                    self.white_stones += 1
+                case 1:
+                    self.black_stones += 1
+                case 2:
+                    self.white_stones += 1
+                case 3:
+                    self.black_stones += 1
+                case 4:
+                    self.white_capstones += 1
+                case 5:
+                    self.black_capstones += 1
+        elif last_move['type'] == 'move_stack':
+            x, y = last_move['position']
+            x_modifier = 0
+            y_modifier = 0
+            if last_move['direction'] == '+':
+                y_modifier = 1
+            elif last_move['direction'] == '-':
+                y_modifier = -1
+            elif last_move['direction'] == '<':
+                x_modifier = -1
+            else:
+                x_modifier = 1
+
+            for i, count in enumerate(last_move['carry_pattern']):
+                for j in range(count):
+                    stone_to_move = self.board[y + ((i + 1) * y_modifier)][x + ((i + 1) * x_modifier)].pop(j - count)
+                    self.board[y][x].append(stone_to_move)
+            if last_move['smashed_stone']:
+                self.board[y + (len(last_move['carry_pattern']) * y_modifier)][x + (len(last_move['carry_pattern']) * x_modifier)][-1] += 2
+
+
+
 
 
     def simulate_move(self, move):
-        copy = self._copy()
-        copy.make_move(move)
-        return copy.turn
+        self.make_move(move)
+        result = self.turn
+        self.undo_move()
+        return result
 
     def _filter_base(self, moves, include_result=False):
         winning_moves = []
@@ -559,10 +668,10 @@ class Tak:
         neutral_moves = []
         losing_moves = []
         for move in level_1_filtered:
-            game_copy = self._copy()
-            game_copy.make_move(move)
-            opponent_moves = game_copy.get_all_legal_moves()
-            _, opponent_result = game_copy._filter_recursive(opponent_moves, include_result=True, remaining_depth=remaining_depth - 1)
+            self.make_move(move)
+            opponent_moves = self.get_all_legal_moves()
+            _, opponent_result = self._filter_recursive(opponent_moves, include_result=True, remaining_depth=remaining_depth - 1)
+            self.undo_move()
             if opponent_result == 1:
                 losing_moves.append(move)
             elif opponent_result == -1:
@@ -581,3 +690,6 @@ class Tak:
         if include_result:
             return losing_moves, -1
         return losing_moves
+
+    def __eq__(self, other):
+        return self.board == other.board and self.turn == other.turn and self.white_stones == other.white_stones and self.black_stones == other.black_stones and self.white_capstones == other.white_capstones and self.black_capstones == other.black_capstones and self.move_history == other.move_history

@@ -42,16 +42,18 @@ moves = [
 '4c3-13',
 ]
 
-# for move in moves:
-#     print(move)
-#     legal_moves = tak.get_all_legal_moves()
-#     if move in legal_moves:
-#         pass
-#     else:
-#         raise Exception('Invalid move')
-#     print(len(legal_moves))
-#     tak.make_move(move)
-# print(tak.turn)
+tak = game.Tak(6)
+
+for move in moves:
+    print(move)
+    legal_moves = tak.get_all_legal_moves()
+    if move in legal_moves:
+        pass
+    else:
+        raise Exception('Invalid move')
+    print(len(legal_moves))
+    tak.make_move(move)
+print(tak.turn)
 
 # game_ptn = ''
 #
@@ -75,19 +77,89 @@ moves = [
 # with open('test2.ptn', 'w') as f:
 #     f.write(game_ptn)
 
-tak = game.Tak(5)
+# tak = game.Tak(5)
+#
+#
+#
+# while True:
+#     move = input('> ')
+#     if move:
+#         tak.make_move(move)
+#     else:
+#         moves = tak.get_all_legal_moves(filtering=2)
+#         rand_move = choice(moves)
+#         tak.make_move(rand_move)
+#         print(rand_move)
+#     if tak.turn in [4, 5, 6]:
+#         print('Game over')
+#         print(tak.turn)
+#         break
 
-while True:
-    move = input('> ')
-    if move:
-        tak.make_move(move)
-    else:
-        moves = tak.get_all_legal_moves(filtering=3)
-        rand_move = choice(moves)
-        tak.make_move(rand_move)
-        print(rand_move)
-    if tak.turn in [4, 5, 6]:
-        print('Game over')
-        print(tak.turn)
-        break
+
+# tak = game.Tak(5)
+# tak.make_move('e1')
+# tak.make_move('a1')
+# tak.make_move('a2')
+# tak.make_move('d1')
+# tak.make_move('a3')
+# tak.make_move('e2')
+# tak.make_move('b4')
+# moves = tak.get_all_legal_moves(filtering=3)
+# print(moves)
+
+
+
+
+
+
+
+# for i in range(1000):
+#     tak = game.Tak(6)
+#     while True:
+#         game_copy = tak._copy()
+#         legal_moves = tak.get_all_legal_moves()
+#         for move in legal_moves:
+#             tak.make_move(move)
+#             tak.undo_move()
+#             if game_copy == tak:
+#                 pass
+#             else:
+#                 print('Failed Move: ' + move)
+#                 print()
+#                 print('Initial board: ' + str(game_copy.board))
+#                 print('Resulting board: ' + str(tak.board))
+#                 print('Board matches: ' + str(game_copy.board == tak.board))
+#                 print()
+#                 print('white stones before: ' + str(game_copy.white_stones))
+#                 print('white stones after: ' + str(tak.white_stones))
+#                 print('white stone count matches: ' + str(game_copy.white_stones == tak.white_stones))
+#                 print()
+#                 print('black stones before: ' + str(game_copy.black_stones))
+#                 print('black stones after: ' + str(tak.black_stones))
+#                 print('black stone count matches: ' + str(game_copy.black_stones == tak.black_stones))
+#                 print()
+#                 print('white capstones before: ' + str(game_copy.white_capstones))
+#                 print('white capstones after: ' + str(tak.white_capstones))
+#                 print('white capstone count matches: ' + str(game_copy.white_capstones == tak.white_capstones))
+#                 print()
+#                 print('black capstones before: ' + str(game_copy.black_capstones))
+#                 print('black capstones after: ' + str(tak.black_capstones))
+#                 print('black capstone count matches: ' + str(game_copy.black_capstones == tak.black_capstones))
+#                 print()
+#                 print('turn before: ' + str(game_copy.turn))
+#                 print('turn after: ' + str(tak.turn))
+#                 print('turn matches: ' + str(game_copy.turn == tak.turn))
+#                 print()
+#                 print('history matches: ' + str(game_copy.move_history == tak.move_history))
+#                 print()
+#                 game_copy.make_move(move)
+#                 print('Move Recorded: ' + str(game_copy.move_history[-1]))
+#                 raise Exception('Move Reversal Failed')
+#         tak.make_move(choice(legal_moves))
+#         if tak.turn in [4, 5, 6]:
+#             print('Game over')
+#             print(tak.turn)
+#             break
+
+
 
