@@ -1,8 +1,7 @@
 import copy
-from collections import deque
 
 _sizes = {
-    3: [10, 1],
+    3: [10, 0],
     4: [15, 0],
     5: [21, 1],
     6: [30, 1],
@@ -10,7 +9,11 @@ _sizes = {
     8: [50, 2],
 }
 
-
+_NUMBERS = {'1': 0, '2': 1, '3': 2, '4': 3, '5': 4, '6': 5, '7': 6, '8': 7}
+_LETTERS = {'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4, 'f': 5, 'g': 6, 'h': 7}
+_DIRECTIONS = {'<', '>', '-', '+'}
+_NUMBERS_REVERSED = {0: '1', 1: '2', 2: '3', 3: '4', 4: '5', 5: '6', 6: '7', 7: '8'}
+_LETTERS_REVERSED = {0: 'a', 1: 'b', 2: 'c', 3: 'd', 4: 'e', 5: 'f', 6: 'g', 7: 'h'}
 
 class Tak:
 
@@ -31,15 +34,7 @@ class Tak:
                 row.append([])
             self.board.append(row)
 
-    def _handle_flat_win(self, simplified_board):
-        white_count = 0
-        black_count = 0
-        for row in simplified_board:
-            for stone in row:
-                if stone == 0:
-                    white_count += 1
-                elif stone == 1:
-                    black_count += 1
+    def _handle_flat_win(self, white_count, black_count):
         if white_count > black_count:
             self.turn = 5
         if black_count > white_count:
@@ -47,67 +42,95 @@ class Tak:
         if white_count == black_count:
             self.turn = 4
 
-    def _find_road_win(self, simplified_board):
+    def _find_road_win(self):
         # Returns 0 if no road win, 1 if white wins, -1 if black wins
         # If both have roads (possible via stack movement), the current mover wins
         # Road pieces: white = 0, 4 (flat, capstone) | black = 1, 5 (flat, capstone)
 
-        WHITE_ROAD_PIECES = {0, 4}
-        BLACK_ROAD_PIECES = {1, 5}
+        changed = []
+        last_move = self.move_history[-1]
+        if last_move['type'] == 'place_stone':
+            if last_move['stone_type'] in [2, 3]:
+                pass
+            else:
+                changed.append(last_move['position'])
+        else:
+            changed.append(last_move['position'])
+            x_position = last_move['position'][0]
+            y_position = last_move['position'][1]
+            x_modifier = 0
+            y_modifier = 0
+            if last_move['direction'] == '+':
+                y_modifier = 1
+            elif last_move['direction'] == '-':
+                y_modifier = -1
+            elif last_move['direction'] == '<':
+                x_modifier = -1
+            elif last_move['direction'] == '>':
+                x_modifier = 1
+            for i in range(len(last_move['carry_pattern'])):
+                changed.append((x_position + (i + 1) * x_modifier, y_position + (i + 1) * y_modifier))
 
-        def bfs_has_road(road_pieces):
-            # For a road, we need to connect either:
-            # top/bottom edges (rows 0 and board_size-1)
-            # OR left/right edges (cols 0 and board_size-1)
+        white_has_road = False
+        black_has_road = False
+        visited_white = set()
+        visited_black = set()
 
-            visited = set()
+        while changed:
+            x0, y0 = changed.pop()
+            if not self.board[y0][x0]:
+                continue
+            top = self.board[y0][x0][-1]
+            if top in [2, 3]:
+                continue
 
-            # Try top-to-bottom road
-            queue = []
-            for col in range(self.board_size):
-                if simplified_board[0][col] in road_pieces:
-                    queue.append((0, col))
-                    visited.add((0, col))
+            if top in [0, 4]:
+                if white_has_road or (x0, y0) in visited_white:
+                    continue
+                matching_types = [0, 4]
+                visited = visited_white
+                track_type = 1
+            else:  # top in [1, 5]
+                if black_has_road or (x0, y0) in visited_black:
+                    continue
+                matching_types = [1, 5]
+                visited = visited_black
+                track_type = -1
+
+            visited.add((x0, y0))
+            high_x = low_x = x0
+            high_y = low_y = y0
+            queue = [(x0 + 1, y0), (x0 - 1, y0), (x0, y0 + 1), (x0, y0 - 1)]
+            found = False
 
             while queue:
-                row, col = queue.pop(0)
-                if row == self.board_size - 1:
-                    return True
-                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                    nr, nc = row + dr, col + dc
-                    if (0 <= nr < self.board_size and
-                            0 <= nc < self.board_size and
-                            (nr, nc) not in visited and
-                            simplified_board[nr][nc] in road_pieces):
-                        visited.add((nr, nc))
-                        queue.append((nr, nc))
+                x, y = queue.pop()
+                if x < 0 or x >= self.board_size or y < 0 or y >= self.board_size:
+                    continue
+                if (x, y) in visited:
+                    continue
+                visited.add((x, y))
+                if self.board[y][x] and self.board[y][x][-1] in matching_types:
+                    high_x, low_x = max(high_x, x), min(low_x, x)
+                    high_y, low_y = max(high_y, y), min(low_y, y)
+                    if (high_x == self.board_size - 1 and low_x == 0) or (high_y == self.board_size - 1 and low_y == 0):
+                        found = True
+                        break
+                    queue.append((x + 1, y))
+                    queue.append((x - 1, y))
+                    queue.append((x, y + 1))
+                    queue.append((x, y - 1))
 
-            visited = set()
+            if found:
+                if track_type == 1:
+                    white_has_road = True
+                else:
+                    black_has_road = True
+            if white_has_road and black_has_road:
+                break
 
-            # Try left-to-right road
-            queue = []
-            for row in range(self.board_size):
-                if simplified_board[row][0] in road_pieces:
-                    queue.append((row, 0))
-                    visited.add((row, 0))
 
-            while queue:
-                row, col = queue.pop(0)
-                if col == self.board_size - 1:
-                    return True
-                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                    nr, nc = row + dr, col + dc
-                    if (0 <= nr < self.board_size and
-                            0 <= nc < self.board_size and
-                            (nr, nc) not in visited and
-                            simplified_board[nr][nc] in road_pieces):
-                        visited.add((nr, nc))
-                        queue.append((nr, nc))
 
-            return False
-
-        white_has_road = bfs_has_road(WHITE_ROAD_PIECES)
-        black_has_road = bfs_has_road(BLACK_ROAD_PIECES)
 
         if white_has_road and black_has_road:
             # Current mover wins the tiebreak
@@ -140,32 +163,46 @@ class Tak:
             print()
 
     def _advance_turn(self):
-        simplified_board = []
-        for i in range(self.board_size):
-            simplified_board.append([])
-            for j in range(self.board_size):
-                top = -1
-                if self.board[i][j]:
-                    top = self.board[i][j][-1]
-                simplified_board[i].append(top)
-        road_result = self._find_road_win(simplified_board)
+        white_stones_used = _sizes[self.board_size][0] - self.white_stones
+        black_stones_used = _sizes[self.board_size][0] - self.black_stones
+        white_capstones_used = _sizes[self.board_size][1] - self.white_capstones
+        black_capstones_used = _sizes[self.board_size][1] - self.black_capstones
+        white_amount = white_stones_used + white_capstones_used
+        black_amount = black_stones_used + black_capstones_used
+
+        if white_amount < self.board_size and black_amount < self.board_size:
+            self._handle_normal_turn_advance()
+            return
+        road_result = self._find_road_win()
         if road_result != 0:
             if road_result == 1:
                 self.turn = 5
             if road_result == -1:
                 self.turn = 6
             return
-        if (self.white_stones == 0) or (self.black_stones == 0):
-            self._handle_flat_win(simplified_board)
+        if white_amount + black_amount < self.board_size * self.board_size:
+            self._handle_normal_turn_advance()
             return
         empty_count = 0
-        for row in simplified_board:
-            for stone in row:
-                if stone == -1:
+        white_count = 0
+        black_count = 0
+        for row in self.board:
+            for stack in row:
+                if not stack:
                     empty_count += 1
+                elif stack[-1] == 0:
+                    white_count += 1
+                elif stack[-1] == 1:
+                    black_count += 1
         if empty_count == 0:
-            self._handle_flat_win(simplified_board)
+            self._handle_flat_win(white_count, black_count)
             return
+        if (self.white_stones + self.white_capstones == 0) or (self.black_stones + self.black_capstones == 0):
+            self._handle_flat_win(white_count, black_count)
+            return
+        self._handle_normal_turn_advance()
+
+    def _handle_normal_turn_advance(self):
         if self.turn == 0:
             self.turn = 1
             return
@@ -180,16 +217,15 @@ class Tak:
             return
 
 
-    def make_move(self, move: str):
-        numbers = {'1': 0, '2': 1, '3': 2, '4': 3, '5': 4, '6': 5, '7': 6, '8': 7}
-        letters = {'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4, 'f': 5, 'g': 6, 'h': 7}
+    def _handle_board_change(self, move : str):
         initial_turn = self.turn
         is_movement = False
         if self.turn in [4, 5, 6]:
             raise ValueError('game is already finished ' + move)
         for char in move:
-            if char in ['+', '-', '<', '>']:
+            if char in _DIRECTIONS:
                 is_movement = True
+                break
         if is_movement and self.turn in [0, 1]:
             raise ValueError('invalid move for first turn ' + move)
         if not is_movement:
@@ -198,14 +234,13 @@ class Tak:
             if move[0] == 'S':
                 if self.turn in [0, 1]:
                     raise ValueError('invalid move for first turn Placing Wall' + move)
-                position_x = letters[move[1]]
-                position_y = numbers[move[2]]
+                position_x = _LETTERS[move[1]]
+                position_y = _NUMBERS[move[2]]
                 if self.turn == 2:
                     if self.white_stones > 0:
                         if not self.board[position_y][position_x]:
                             self.white_stones -= 1
                             self.board[position_y][position_x].append(2)
-                            self._advance_turn()
                             moveInfo = {
                                 'type': 'place_stone',
                                 'position': (position_x, position_y),
@@ -223,7 +258,6 @@ class Tak:
                         if not self.board[position_y][position_x]:
                             self.black_stones -= 1
                             self.board[position_y][position_x].append(3)
-                            self._advance_turn()
                             moveInfo = {
                                 'type': 'place_stone',
                                 'position': (position_x, position_y),
@@ -240,14 +274,13 @@ class Tak:
             if move[0] == 'C':
                 if self.turn in [0, 1]:
                     raise ValueError('invalid move for first turn Placing Capstone' + move)
-                position_x = letters[move[1]]
-                position_y = numbers[move[2]]
+                position_x = _LETTERS[move[1]]
+                position_y = _NUMBERS[move[2]]
                 if self.turn == 2:
                     if self.white_capstones > 0:
                         if not self.board[position_y][position_x]:
                             self.white_capstones -= 1
                             self.board[position_y][position_x].append(4)
-                            self._advance_turn()
                             moveInfo = {
                                 'type': 'place_stone',
                                 'position': (position_x, position_y),
@@ -265,7 +298,6 @@ class Tak:
                         if not self.board[position_y][position_x]:
                             self.black_capstones -= 1
                             self.board[position_y][position_x].append(5)
-                            self._advance_turn()
                             moveInfo = {
                                 'type': 'place_stone',
                                 'position': (position_x, position_y),
@@ -279,15 +311,14 @@ class Tak:
                     else:
                         raise ValueError('No more capstones available  ' + move)
                 raise ValueError('game is already finished ' + move)
-            if move[0] in letters.keys():
-                position_x = letters[move[0]]
-                position_y = numbers[move[1]]
+            if move[0] in _LETTERS:
+                position_x = _LETTERS[move[0]]
+                position_y = _NUMBERS[move[1]]
                 if self.turn in [1, 2]:
                     if self.white_stones > 0:
                         if not self.board[position_y][position_x]:
                             self.white_stones -= 1
                             self.board[position_y][position_x].append(0)
-                            self._advance_turn()
                             moveInfo = {
                                 'type': 'place_stone',
                                 'position': (position_x, position_y),
@@ -305,7 +336,6 @@ class Tak:
                         if not self.board[position_y][position_x]:
                             self.black_stones -= 1
                             self.board[position_y][position_x].append(1)
-                            self._advance_turn()
                             moveInfo = {
                                 'type': 'place_stone',
                                 'position': (position_x, position_y),
@@ -323,7 +353,7 @@ class Tak:
         if is_movement:
             carry_amount = 0
             has_prefix = False
-            if move[0] in numbers.keys():
+            if move[0] in _NUMBERS:
                 carry_amount = int(move[0])
                 has_prefix = True
             else:
@@ -342,11 +372,11 @@ class Tak:
             position_x = 0
             position_y = 0
             if len(split_move[0]) == 2:
-                position_x = letters[split_move[0][0]]
-                position_y = numbers[split_move[0][1]]
+                position_x = _LETTERS[split_move[0][0]]
+                position_y = _NUMBERS[split_move[0][1]]
             elif len(split_move[0]) == 3:
-                position_x = letters[split_move[0][1]]
-                position_y = numbers[split_move[0][2]]
+                position_x = _LETTERS[split_move[0][1]]
+                position_y = _NUMBERS[split_move[0][2]]
             if not self.board[position_y][position_x]:
                 raise ValueError('No stack to move  ' + move)
             controlling_piece = self.board[position_y][position_x][-1]
@@ -381,14 +411,14 @@ class Tak:
                         top_stone = current_stack[-1]
                         if top_stone in [2, 3]:
                             if stone_to_move in [4, 5]:
-                                self.board[position_y + (i + 1) * y_modifier][position_x + (i + 1) * x_modifier][-1] -= 2
+                                self.board[position_y + (i + 1) * y_modifier][position_x + (i + 1) * x_modifier][
+                                    -1] -= 2
                                 smashed_stone = True
                             else:
                                 raise ValueError('Cannot move non capstone onto wall ' + move)
                         if top_stone in [4, 5]:
                             raise ValueError('Cannot onto capstone ' + move)
                     self.board[position_y + (i + 1) * y_modifier][position_x + (i + 1) * x_modifier].append(stones_to_move.pop())
-            self._advance_turn()
             moveInfo = {
                 'type': 'move_stack',
                 'position': (position_x, position_y),
@@ -400,6 +430,11 @@ class Tak:
             self.move_history.append(moveInfo)
             return
         raise ValueError('Invalid PTN format  ' + move)
+
+
+    def make_move(self, move: str):
+        self._handle_board_change(move)
+        self._advance_turn()
 
 
     def _enumerate_sequences(self, n : int, k : int, soft_stop : bool, first_step : bool) -> list:
@@ -490,10 +525,8 @@ class Tak:
         left_drop_patterns = self._enumerate_sequences(stack_size, spaces_left, left_soft, True)
         right_drop_patterns = self._enumerate_sequences(stack_size, spaces_right, right_soft, True)
 
-        numbers = {0: '1', 1: '2', 2: '3', 3: '4', 4: '5', 5: '6', 6: '7', 7: '8'}
-        letters = {0: 'a', 1: 'b', 2: 'c', 3: 'd', 4: 'e', 5: 'f', 6: 'g', 7: 'h'}
 
-        move_cords = letters[x] + numbers[y]
+        move_cords = _LETTERS_REVERSED[x] + _NUMBERS_REVERSED[y]
         for drop_pattern in up_drop_patterns:
             moved_amount = sum(drop_pattern)
             move = str(moved_amount) + move_cords + '-'

@@ -1,6 +1,7 @@
 from random import choice
 
 import game
+import bot
 
 
 
@@ -42,19 +43,23 @@ moves = [
 '4c3-13',
 ]
 
-tak = game.Tak(6)
+# tak = game.Tak(6)
+#
+# for move in moves:
+#     print(move)
+#     legal_moves = tak.get_all_legal_moves()
+#     if move in legal_moves:
+#         pass
+#     else:
+#         raise Exception('Invalid move')
+#     print(len(legal_moves))
+#     tak.make_move(move)
+# print(tak.turn)
 
-for move in moves:
-    print(move)
-    legal_moves = tak.get_all_legal_moves()
-    if move in legal_moves:
-        pass
-    else:
-        raise Exception('Invalid move')
-    print(len(legal_moves))
-    tak.make_move(move)
-print(tak.turn)
-
+# tak = game.Tak(6)
+#
+# bot = bot.EvalBot(2)
+#
 # game_ptn = ''
 #
 # move_count = 0
@@ -62,16 +67,15 @@ print(tak.turn)
 # while True:
 #     if move_count % 2 == 0:
 #         game_ptn += '\n' + str((move_count // 2) + 1) + '.'
-#     legal_moves = tak.get_all_legal_moves(filtering=3)
-#     if len(legal_moves) == 0:
-#         break
-#     rand_move = choice(legal_moves)
+#     rand_move = bot.make_move(tak, do_move=False, curve_power=10)
 #     game_ptn += ' ' + rand_move
 #     print(rand_move)
-#     print(len(legal_moves))
 #     tak.make_move(rand_move)
 #     move_count += 1
-#     tak.display_board()
+#     if tak.turn in [4, 5, 6]:
+#         print('Game over')
+#         break
+#
 # print(tak.turn)
 #
 # with open('test2.ptn', 'w') as f:
@@ -95,7 +99,7 @@ print(tak.turn)
 #         print(tak.turn)
 #         break
 
-
+#
 # tak = game.Tak(5)
 # tak.make_move('e1')
 # tak.make_move('a1')
@@ -106,9 +110,6 @@ print(tak.turn)
 # tak.make_move('b4')
 # moves = tak.get_all_legal_moves(filtering=3)
 # print(moves)
-
-
-
 
 
 
