@@ -43,18 +43,18 @@ moves = [
 '4c3-13',
 ]
 
-# tak = game.Tak(6)
-#
-# for move in moves:
-#     print(move)
-#     legal_moves = tak.get_all_legal_moves()
-#     if move in legal_moves:
-#         pass
-#     else:
-#         raise Exception('Invalid move')
-#     print(len(legal_moves))
-#     tak.make_move(move)
-# print(tak.turn)
+tak = game.Tak(6)
+
+for move in moves:
+    print(move)
+    legal_moves = tak.get_all_legal_moves()
+    if move in legal_moves:
+        pass
+    else:
+        raise Exception('Invalid move')
+    print(len(legal_moves))
+    tak.make_move(move)
+print(tak.turn)
 
 # tak = game.Tak(6)
 #

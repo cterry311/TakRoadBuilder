@@ -559,8 +559,6 @@ class Tak:
 
 
     def _get_all_moves_base(self):
-        numbers = {0: '1', 1: '2', 2: '3', 3: '4', 4: '5', 5: '6', 6: '7', 7: '8'}
-        letters = {0: 'a', 1: 'b', 2: 'c', 3: 'd', 4: 'e', 5: 'f', 6: 'g', 7: 'h'}
         legal_moves = []
         if self.turn in [4, 5, 6]:
             return legal_moves
@@ -569,14 +567,14 @@ class Tak:
             for x in range(self.board_size):
                 if not self.board[y][x]:
                     # handle stone placement
-                    legal_moves.append(letters[x] + numbers[y])
+                    legal_moves.append(_LETTERS_REVERSED[x] + _NUMBERS_REVERSED[y])
                     if self.turn in [2, 3]:
                         # if not first turn, add walls
-                        legal_moves.append('S' + letters[x] + numbers[y])
+                        legal_moves.append('S' + _LETTERS_REVERSED[x] + _NUMBERS_REVERSED[y])
                         if (self.turn == 2 and self.white_capstones > 0) or (
                                 self.turn == 3 and self.black_capstones > 0):
                             # if capstones available, add capstones
-                            legal_moves.append('C' + letters[x] + numbers[y])
+                            legal_moves.append('C' + _LETTERS_REVERSED[x] + _NUMBERS_REVERSED[y])
                 elif do_movement:
                     # if doing movement, and there is at least 1 stone on the current stack, handle movement
                     if (self.turn == 2 and self.board[y][x][-1] in [0, 2, 4]) or (
@@ -726,3 +724,55 @@ class Tak:
 
     def __eq__(self, other):
         return self.board == other.board and self.turn == other.turn and self.white_stones == other.white_stones and self.black_stones == other.black_stones and self.white_capstones == other.white_capstones and self.black_capstones == other.black_capstones and self.move_history == other.move_history
+
+    def to_tps(self) -> str:
+        tps_string = ''
+        for row_index in range(self.board_size - 1, -1, -1):
+            tps_row = []
+            for col_index in range(self.board_size):
+                stack_string = ''
+                if len(self.board[row_index][col_index]) == 0:
+                    stack_string = 'x'
+                for stone in self.board[row_index][col_index]:
+                    match stone:
+                        case 0:
+                            stack_string += '1'
+                        case 1:
+                            stack_string += '2'
+                        case 2:
+                            stack_string += '1S'
+                        case 3:
+                            stack_string += '2S'
+                        case 4:
+                            stack_string += '1C'
+                        case 5:
+                            stack_string += '2C'
+                        case _:
+                            raise ValueError('Invalid stone type')
+                tps_row.append(stack_string)
+            x_count = 0
+            total_count = 0
+            row_string = ''
+            for square_string in tps_row:
+                total_count += 1
+                if square_string == 'x':
+                    x_count += 1
+                    if total_count == self.board_size:
+                        row_string += 'x' + (str(x_count) if x_count != 1 else '')
+                else:
+                    if x_count > 0:
+                        row_string += 'x' + (str(x_count) if x_count != 1 else '') + ','
+                        x_count = 0
+                    row_string += square_string
+                    if total_count != self.board_size:
+                        row_string += ','
+            tps_string += row_string
+            if row_index != 0:
+                tps_string += '/'
+        tps_string += f' {1 if self.turn in [0, 2] else 2} {(len(self.move_history) // 2) + 1}'
+        return tps_string
+
+
+    @staticmethod
+    def from_tps(self, tps : str) -> Tak:
+        pass
