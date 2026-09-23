@@ -117,21 +117,32 @@ def parse_server_notation(notation : str, result):
 # print(parse_server_notation(output[1000][0], '1-0'))
 # conn.close()
 
+# cursor.execute('''
+#     SELECT * FROM games_formated
+#     WHERE id = 418665
+# ''')
+#
+# output = cursor.fetchall()
+#
+# print('id: ', output[0][0])
+# print('player_white: ', output[0][1])
+# print('player_black: ', output[0][2])
+# print('notation: ', output[0][3])
+# print('game_length: ', output[0][4])
+#
+# with open('wronged.ptn', 'w') as f:
+#     f.write(output[0][3])
+
+
+
+
+
 cursor.execute('''
-    SELECT * FROM games_formated
-    WHERE id = 418665
+    SELECT * FROM training_positions
 ''')
 
-output = cursor.fetchall()
+position = cursor.fetchall()[11000]
 
-print('id: ', output[0][0])
-print('player_white: ', output[0][1])
-print('player_black: ', output[0][2])
-print('notation: ', output[0][3])
-print('game_length: ', output[0][4])
-
-with open('wronged.ptn', 'w') as f:
-    f.write(output[0][3])
-
+print(position)
 
 cursor.close()

@@ -15,6 +15,35 @@ _DIRECTIONS = {'<', '>', '-', '+'}
 _NUMBERS_REVERSED = {0: '1', 1: '2', 2: '3', 3: '4', 4: '5', 5: '6', 6: '7', 7: '8'}
 _LETTERS_REVERSED = {0: 'a', 1: 'b', 2: 'c', 3: 'd', 4: 'e', 5: 'f', 6: 'g', 7: 'h'}
 
+
+def _parse_tps_stack(token: str) -> list: # AI generated method
+    """
+    Parse a single square's TPS stack token (e.g. '1', '2', '122C', '1S')
+    into a list of internal stone-type ints, bottom-to-top.
+    Owner digit '1' -> white, '2' -> black. An optional trailing 'S' or 'C'
+    on the LAST piece only marks it as a wall or capstone (only the top of
+    a stack can ever be a wall/capstone, per the game's own rules).
+    """
+    stones = []
+    i = 0
+    n = len(token)
+    while i < n:
+        owner_char = token[i]
+        if owner_char not in ('1', '2'):
+            raise ValueError(f'Invalid stack token: {token!r}')
+        if i + 1 < n and token[i + 1] in ('S', 'C'):
+            suffix = token[i + 1]
+            if suffix == 'S':
+                stones.append(2 if owner_char == '1' else 3)
+            else:  # 'C'
+                stones.append(4 if owner_char == '1' else 5)
+            i += 2
+        else:
+            stones.append(0 if owner_char == '1' else 1)
+            i += 1
+    return stones
+
+
 class Tak:
 
     def __init__(self, board_size: int):
@@ -43,10 +72,6 @@ class Tak:
             self.turn = 4
 
     def _find_road_win(self):
-        # Returns 0 if no road win, 1 if white wins, -1 if black wins
-        # If both have roads (possible via stack movement), the current mover wins
-        # Road pieces: white = 0, 4 (flat, capstone) | black = 1, 5 (flat, capstone)
-
         changed = []
         last_move = self.move_history[-1]
         if last_move['type'] == 'place_stone':
@@ -90,7 +115,7 @@ class Tak:
                 matching_types = [0, 4]
                 visited = visited_white
                 track_type = 1
-            else:  # top in [1, 5]
+            else:
                 if black_has_road or (x0, y0) in visited_black:
                     continue
                 matching_types = [1, 5]
@@ -129,12 +154,7 @@ class Tak:
             if white_has_road and black_has_road:
                 break
 
-
-
-
         if white_has_road and black_has_road:
-            # Current mover wins the tiebreak
-            # turns 0,2 = white moving | turns 1,3 = black moving
             if self.turn in [0, 2]:
                 return 1
             else:
@@ -216,8 +236,7 @@ class Tak:
             self.turn = 2
             return
 
-
-    def _handle_board_change(self, move : str):
+    def _handle_board_change(self, move: str):
         initial_turn = self.turn
         is_movement = False
         if self.turn in [4, 5, 6]:
@@ -431,13 +450,11 @@ class Tak:
             return
         raise ValueError('Invalid PTN format  ' + move)
 
-
     def make_move(self, move: str):
         self._handle_board_change(move)
         self._advance_turn()
 
-
-    def _enumerate_sequences(self, n : int, k : int, soft_stop : bool, first_step : bool) -> list:
+    def _enumerate_sequences(self, n: int, k: int, soft_stop: bool, first_step: bool) -> list:
         all_sequences = []
         if not first_step:
             all_sequences.append(())
@@ -453,10 +470,9 @@ class Tak:
                 all_sequences.append((i,) + seq)
         return all_sequences
 
-
-    def _handle_movement_enumeration(self, x : int, y : int):
+    def _handle_movement_enumeration(self, x: int, y: int):
         legal_moves = []
-        stack_size = min(len(self.board[y][x]), self.board_size) # how many stones we have to work with in the drop pattern
+        stack_size = min(len(self.board[y][x]), self.board_size)
 
         spaces_above = 0
         above_soft = False
@@ -472,7 +488,6 @@ class Tak:
                         above_soft = True
                     break
             spaces_above += 1
-
 
         spaces_below = 0
         below_soft = False
@@ -519,12 +534,10 @@ class Tak:
                     break
             spaces_right += 1
 
-
         up_drop_patterns = self._enumerate_sequences(stack_size, spaces_above, above_soft, True)
         down_drop_patterns = self._enumerate_sequences(stack_size, spaces_below, below_soft, True)
         left_drop_patterns = self._enumerate_sequences(stack_size, spaces_left, left_soft, True)
         right_drop_patterns = self._enumerate_sequences(stack_size, spaces_right, right_soft, True)
-
 
         move_cords = _LETTERS_REVERSED[x] + _NUMBERS_REVERSED[y]
         for drop_pattern in up_drop_patterns:
@@ -557,7 +570,6 @@ class Tak:
 
         return legal_moves
 
-
     def _get_all_moves_base(self):
         legal_moves = []
         if self.turn in [4, 5, 6]:
@@ -566,31 +578,23 @@ class Tak:
         for y in range(self.board_size):
             for x in range(self.board_size):
                 if not self.board[y][x]:
-                    # handle stone placement
                     legal_moves.append(_LETTERS_REVERSED[x] + _NUMBERS_REVERSED[y])
                     if self.turn in [2, 3]:
-                        # if not first turn, add walls
                         legal_moves.append('S' + _LETTERS_REVERSED[x] + _NUMBERS_REVERSED[y])
                         if (self.turn == 2 and self.white_capstones > 0) or (
                                 self.turn == 3 and self.black_capstones > 0):
-                            # if capstones available, add capstones
                             legal_moves.append('C' + _LETTERS_REVERSED[x] + _NUMBERS_REVERSED[y])
                 elif do_movement:
-                    # if doing movement, and there is at least 1 stone on the current stack, handle movement
                     if (self.turn == 2 and self.board[y][x][-1] in [0, 2, 4]) or (
                             self.turn == 3 and self.board[y][x][-1] in [1, 3, 5]):
-                        # check if the stack is under control of the current mover
                         legal_moves.extend(self._handle_movement_enumeration(x, y))
         return legal_moves
 
-
-
-    def get_all_legal_moves(self, filtering=-1):
+    def get_all_legal_moves(self, filtering=-1, do_pruning=True):
         legal_moves = self._get_all_moves_base()
         if filtering == -1:
             return legal_moves
-        return self._filter_recursive(legal_moves, include_result=False, remaining_depth=filtering)
-
+        return self._filter_recursive(legal_moves, include_result=False, remaining_depth=filtering, prune_winning_moves=do_pruning)
 
     def _copy(self):
         new_game = Tak(self.board_size)
@@ -642,17 +646,13 @@ class Tak:
             if last_move['smashed_stone']:
                 self.board[y + (len(last_move['carry_pattern']) * y_modifier)][x + (len(last_move['carry_pattern']) * x_modifier)][-1] += 2
 
-
-
-
-
     def simulate_move(self, move):
         self.make_move(move)
         result = self.turn
         self.undo_move()
         return result
 
-    def _filter_base(self, moves, include_result=False):
+    def _filter_base(self, moves, include_result=False, prune_winning_moves=True):
         winning_moves = []
         neutral_moves = []
         losing_moves = []
@@ -662,10 +662,12 @@ class Tak:
                 neutral_moves.append(move)
             elif self.turn == 2 and result == 5:
                 winning_moves.append(move)
-                break
+                if prune_winning_moves:
+                    break
             elif self.turn == 3 and result == 6:
                 winning_moves.append(move)
-                break
+                if prune_winning_moves:
+                    break
             else:
                 losing_moves.append(move)
         if winning_moves:
@@ -680,9 +682,8 @@ class Tak:
             return losing_moves, -1
         return losing_moves
 
-
-    def _filter_recursive(self, moves, include_result=False, remaining_depth=0):
-        level_1_filtered, result = self._filter_base(moves, include_result=True)
+    def _filter_recursive(self, moves, include_result=False, remaining_depth=0, prune_winning_moves=True):
+        level_1_filtered, result = self._filter_base(moves, include_result=True, prune_winning_moves=prune_winning_moves)
         if result == 1:
             if include_result:
                 return level_1_filtered, 1
@@ -701,13 +702,14 @@ class Tak:
         for move in level_1_filtered:
             self.make_move(move)
             opponent_moves = self.get_all_legal_moves()
-            _, opponent_result = self._filter_recursive(opponent_moves, include_result=True, remaining_depth=remaining_depth - 1)
+            _, opponent_result = self._filter_recursive(opponent_moves, include_result=True, remaining_depth=remaining_depth - 1, prune_winning_moves=prune_winning_moves)
             self.undo_move()
             if opponent_result == 1:
                 losing_moves.append(move)
             elif opponent_result == -1:
                 winning_moves.append(move)
-                break
+                if prune_winning_moves:
+                    break
             else:
                 neutral_moves.append(move)
         if winning_moves:
@@ -723,7 +725,7 @@ class Tak:
         return losing_moves
 
     def __eq__(self, other):
-        return self.board == other.board and self.turn == other.turn and self.white_stones == other.white_stones and self.black_stones == other.black_stones and self.white_capstones == other.white_capstones and self.black_capstones == other.black_capstones and self.move_history == other.move_history
+        return self.board == other.board and self.turn == other.turn and self.white_stones == other.white_stones and self.black_stones == other.black_stones and self.white_capstones == other.white_capstones and self.black_capstones == other.black_capstones
 
     def to_tps(self) -> str:
         tps_string = ''
@@ -772,7 +774,82 @@ class Tak:
         tps_string += f' {1 if self.turn in [0, 2] else 2} {(len(self.move_history) // 2) + 1}'
         return tps_string
 
-
     @staticmethod
-    def from_tps(self, tps : str) -> Tak:
-        pass
+    def from_tps(tps: str) -> 'Tak': # AI generated method
+        """
+        Reconstruct a Tak game object from a TPS string.
+
+        Reconstructs: board_size, board contents, stone/capstone reserves,
+        and the current turn state (0/1/2/3).
+
+        LIMITATION: TPS only encodes the current position, not the sequence
+        of moves that led to it. move_history is therefore filled with
+        placeholder entries (not real move records) whose only job is to
+        make len(move_history) come out correct, so a later call to
+        to_tps() reproduces the right move number. undo_move() will NOT
+        work correctly on a game reconstructed this way, since there's no
+        real history to undo.
+        """
+        parts = tps.strip().split(' ')
+        if len(parts) != 3:
+            raise ValueError(f'Invalid TPS string: {tps!r}')
+        board_part, turn_field, move_num_str = parts
+        move_number = int(move_num_str)
+        if turn_field not in ('1', '2'):
+            raise ValueError(f'Invalid TPS turn field: {turn_field!r}')
+
+        row_strs = board_part.split('/')
+        board_size = len(row_strs)
+        if board_size not in _sizes:
+            raise ValueError(f'Unsupported board size inferred from TPS: {board_size}')
+
+        game = Tak(board_size)
+
+        for i, row_str in enumerate(row_strs):
+            row_index = board_size - 1 - i  # TPS lists rows top (highest rank) to bottom
+            col_index = 0
+            for token in row_str.split(','):
+                if token.startswith('x'):
+                    count_str = token[1:]
+                    run_len = int(count_str) if count_str else 1
+                    col_index += run_len  # squares already empty by default
+                else:
+                    game.board[row_index][col_index] = _parse_tps_stack(token)
+                    col_index += 1
+            if col_index != board_size:
+                raise ValueError(f'Row does not match board size ({board_size}): {row_str!r}')
+
+        white_stones_used = 0
+        black_stones_used = 0
+        white_caps_used = 0
+        black_caps_used = 0
+        for row in game.board:
+            for stack in row:
+                for stone in stack:
+                    if stone in (0, 2):
+                        white_stones_used += 1
+                    elif stone in (1, 3):
+                        black_stones_used += 1
+                    elif stone == 4:
+                        white_caps_used += 1
+                    elif stone == 5:
+                        black_caps_used += 1
+
+        game.white_stones = _sizes[board_size][0] - white_stones_used
+        game.black_stones = _sizes[board_size][0] - black_stones_used
+        game.white_capstones = _sizes[board_size][1] - white_caps_used
+        game.black_capstones = _sizes[board_size][1] - black_caps_used
+
+        # Reconstruct turn state. This is the exact inverse of to_tps()'s
+        # `1 if self.turn in [0, 2] else 2` and its move-number formula.
+        total_plies_completed = (move_number - 1) * 2 + (1 if turn_field == '2' else 0)
+        if total_plies_completed == 0:
+            game.turn = 0
+        elif total_plies_completed == 1:
+            game.turn = 1
+        else:
+            game.turn = 2 if turn_field == '1' else 3
+
+        game.move_history = [None] * total_plies_completed
+
+        return game

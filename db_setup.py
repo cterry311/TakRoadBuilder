@@ -115,6 +115,18 @@ cursor.execute('''
 );
 ''')
 
+
+cursor.execute('''
+    CREATE TABLE training_positions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        game_id INTEGER,
+        tps TEXT,
+        move VARCHAR(9),
+        move_number SMALLINT,
+        FOREIGN KEY (game_id) REFERENCES games_formated(id)
+    )
+''')
+
 cursor.execute('''
     SELECT id, player_white, player_black, notation, result FROM filtered_3
 ''')
@@ -143,8 +155,6 @@ cursor.execute('''
 ''')
 
 games_formated = cursor.fetchall()
-proper_games = 0
-improper_games = 0
 for game in games_formated:
     game_id, player_white, player_black, notation, game_length = game
     moves = get_moves_ordered(notation)
@@ -152,12 +162,38 @@ for game in games_formated:
     for move in moves:
         tak.make_move(move)
     if tak.turn not in [4, 5, 6]:
-        improper_games += 1
-    else:
-        proper_games += 1
+        cursor.execute('''
+            DELETE FROM games_formated WHERE id = ?
+        ''', (game_id,))
+        conn.commit()
 
-print(f"proper games: {proper_games}")
-print(f"improper games: {improper_games}")
+cursor.execute('''
+    SELECT id, player_white, player_black, notation, game_length FROM games_formated
+''')
+
+games_formated = cursor.fetchall()
+for game in games_formated:
+    game_id, player_white, player_black, notation, game_length = game
+    moves = get_moves_ordered(notation)
+    tak = Tak(6)
+    move_number = 0
+    for move in moves:
+        move_number += 1
+        tps = tak.to_tps()
+        cursor.execute('''
+            INSERT INTO training_positions (game_id, tps, move, move_number)
+                VALUES (?, ?, ?, ?)
+        ''', (game_id, tps, move, move_number))
+        tak.make_move(move)
+conn.commit()
+
+
+positions = cursor.execute('''
+    SELECT * FROM training_positions
+''')
+for position in positions:
+    position_id, game_id, tps, move, move_number = position
+    tak = Tak.from_tps(tps)
 
 
 conn.close()
