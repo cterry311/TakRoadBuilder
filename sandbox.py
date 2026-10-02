@@ -1,5 +1,8 @@
 import sqlite3
 
+from game_emulator.game import Tak
+from random import choice
+
 conn = sqlite3.connect("games.db")
 cursor = conn.cursor()
 
@@ -136,13 +139,111 @@ def parse_server_notation(notation : str, result):
 
 
 
+#
+# cursor.execute('''
+#     SELECT * FROM training_positions WHERE id = 2640
+# ''')
+#
+# position_id, game_id, tps, move, move_number, edited_position = cursor.fetchall()[0]
+# tak = Tak.from_tps(tps)
+# legal_moves = tak.get_all_legal_moves()
+# filtered_moevs, result = tak.get_all_legal_moves(filtering=1, do_pruning=False, include_result=True)
+# # print('legal moves ', legal_moves)
+# # print('filtered moves ', filtered_moevs)
+# print('result ', result)
+# print(move in legal_moves)
+# print(move in filtered_moevs)
+# print(f'tps: {tps}')
+#
+# for move_i in legal_moves:
+#     if move_i not in filtered_moevs:
+#         print(f"legal move {move_i} not in filtered moves")
+#
+# for move_i in filtered_moevs:
+#     if move_i not in legal_moves:
+#         print(f"filtered move {move_i} not in legal moves")
+#
+#
+# cursor.execute('''
+#     SELECT * FROM training_positions WHERE id = 349741
+# ''')
+#
+# position_id, game_id, tps, move, move_number, edited_position, cleaned_position = cursor.fetchall()[0]
+# tak = Tak.from_tps(tps)
+# possible_moves = tak.get_all_legal_moves()
+# for possible_move in possible_moves:
+#     tak.make_move(possible_move)
+#     new_possible_moves = tak.get_all_legal_moves()
+#     for new_possible_move in new_possible_moves:
+#         try:
+#             tak.make_move(new_possible_move)
+#             tak.undo_move()
+#         except Exception as e:
+#             print(possible_move, new_possible_move)
+#             raise e
+#     tak.undo_move()
+# print('went through all moves')
+# filtered_moves, result = tak.get_all_legal_moves(filtering=1, do_pruning=False, include_result=True)
+# print(move in possible_moves)
+# print(move in filtered_moves)
+# cursor.close()
 
+
+
+print('filtering training positions...')
 cursor.execute('''
-    SELECT * FROM training_positions
+    SELECT * FROM training_positions WHERE cleaned_move = 0
 ''')
-
-position = cursor.fetchall()[11000]
-
-print(position)
-
-cursor.close()
+positions = cursor.fetchall()
+num_positions = len(positions)
+print(f'positions to filter: {num_positions}')
+print(('-' * 46) + 'progress' + ('-' * 46))
+interval = num_positions // 100
+i = 0
+for position in positions:
+    position_id, game_id, tps, move, move_number, edited_position, cleaned_move = position
+    try:
+        tak = Tak.from_tps(tps)
+        filtered_moves, result = tak.get_all_legal_moves(filtering=1, do_pruning=False, include_result=True)
+    except Exception as e:
+        print(f'\nposition id: {position_id}')
+        raise e
+    if move not in filtered_moves:
+        # the move made is not within the filtered moves
+        if result == 1:
+            # there is a winning move avaliable, so I will edit the position such that they make the winning move instead
+            rand_winning_move = choice(filtered_moves)
+            cursor.execute('''
+                UPDATE training_positions 
+                SET edited_position = 1, move = ?, cleaned_move = 1
+                WHERE id = ?
+            ''', (rand_winning_move, position_id))
+        elif result == 0:
+            # there is no winning move availible and they played a losing move when a neutral move was availible, drop the position
+            cursor.execute('''
+                DELETE FROM training_positions WHERE id = ?
+            ''', (position_id,))
+        elif result == -1:
+            legal_moves = tak.get_all_legal_moves()
+            if move in legal_moves:
+                cursor.execute('''
+                    DELETE FROM training_positions WHERE id = ?
+                ''', (position_id,))
+            else:
+                raise ValueError(f'move {move} is not inside the set of legal moves for position {position_id}')
+        else:
+            # somehow result is not 0, 1 or -1, this branch should never be reached
+            raise ValueError(f'result {result} is not 0, 1 or -1 for position {position_id}')
+    else:
+        cursor.execute('''
+            UPDATE training_positions 
+            SET cleaned_move = 1
+            WHERE id = ?
+        ''', (position_id,))
+    i += 1
+    if i % interval == 0:
+        print('*', end='', flush=True)
+        conn.commit()
+conn.commit()
+print('\ntraining positions filtered\n')
+print('done')

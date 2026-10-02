@@ -578,23 +578,26 @@ class Tak:
         for y in range(self.board_size):
             for x in range(self.board_size):
                 if not self.board[y][x]:
-                    legal_moves.append(_LETTERS_REVERSED[x] + _NUMBERS_REVERSED[y])
                     if self.turn in [2, 3]:
-                        legal_moves.append('S' + _LETTERS_REVERSED[x] + _NUMBERS_REVERSED[y])
+                        if (self.turn == 2 and self.white_stones > 0) or (self.turn == 3 and self.black_stones > 0):
+                            legal_moves.append(_LETTERS_REVERSED[x] + _NUMBERS_REVERSED[y])
+                            legal_moves.append('S' + _LETTERS_REVERSED[x] + _NUMBERS_REVERSED[y])
                         if (self.turn == 2 and self.white_capstones > 0) or (
                                 self.turn == 3 and self.black_capstones > 0):
                             legal_moves.append('C' + _LETTERS_REVERSED[x] + _NUMBERS_REVERSED[y])
+                    elif self.turn in [0, 1]:
+                        legal_moves.append(_LETTERS_REVERSED[x] + _NUMBERS_REVERSED[y])
                 elif do_movement:
                     if (self.turn == 2 and self.board[y][x][-1] in [0, 2, 4]) or (
                             self.turn == 3 and self.board[y][x][-1] in [1, 3, 5]):
                         legal_moves.extend(self._handle_movement_enumeration(x, y))
         return legal_moves
 
-    def get_all_legal_moves(self, filtering=-1, do_pruning=True):
+    def get_all_legal_moves(self, filtering=-1, do_pruning=True, include_result=False):
         legal_moves = self._get_all_moves_base()
         if filtering == -1:
             return legal_moves
-        return self._filter_recursive(legal_moves, include_result=False, remaining_depth=filtering, prune_winning_moves=do_pruning)
+        return self._filter_recursive(legal_moves, include_result=include_result, remaining_depth=filtering, do_pruning=do_pruning)
 
     def _copy(self):
         new_game = Tak(self.board_size)
@@ -652,7 +655,7 @@ class Tak:
         self.undo_move()
         return result
 
-    def _filter_base(self, moves, include_result=False, prune_winning_moves=True):
+    def _filter_base(self, moves, include_result=False, do_pruning=True):
         winning_moves = []
         neutral_moves = []
         losing_moves = []
@@ -662,11 +665,11 @@ class Tak:
                 neutral_moves.append(move)
             elif self.turn == 2 and result == 5:
                 winning_moves.append(move)
-                if prune_winning_moves:
+                if do_pruning:
                     break
             elif self.turn == 3 and result == 6:
                 winning_moves.append(move)
-                if prune_winning_moves:
+                if do_pruning:
                     break
             else:
                 losing_moves.append(move)
@@ -682,8 +685,8 @@ class Tak:
             return losing_moves, -1
         return losing_moves
 
-    def _filter_recursive(self, moves, include_result=False, remaining_depth=0, prune_winning_moves=True):
-        level_1_filtered, result = self._filter_base(moves, include_result=True, prune_winning_moves=prune_winning_moves)
+    def _filter_recursive(self, moves, include_result=False, remaining_depth=0, do_pruning=True):
+        level_1_filtered, result = self._filter_base(moves, include_result=True, do_pruning=do_pruning)
         if result == 1:
             if include_result:
                 return level_1_filtered, 1
@@ -702,13 +705,13 @@ class Tak:
         for move in level_1_filtered:
             self.make_move(move)
             opponent_moves = self.get_all_legal_moves()
-            _, opponent_result = self._filter_recursive(opponent_moves, include_result=True, remaining_depth=remaining_depth - 1, prune_winning_moves=prune_winning_moves)
+            _, opponent_result = self._filter_recursive(opponent_moves, include_result=True, remaining_depth=remaining_depth - 1, do_pruning=True)
             self.undo_move()
             if opponent_result == 1:
                 losing_moves.append(move)
             elif opponent_result == -1:
                 winning_moves.append(move)
-                if prune_winning_moves:
+                if do_pruning:
                     break
             else:
                 neutral_moves.append(move)

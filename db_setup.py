@@ -1,5 +1,7 @@
 import sqlite3
 import re
+from random import choice
+
 from game_emulator.game import Tak
 
 def parse_server_notation(notation : str, result):
@@ -68,10 +70,14 @@ def get_moves_ordered(notation : str) -> list[str]:
                 moves.append(parts[2])
     return moves
 
+print('setting up database...')
 
+print('connecting to database...')
 conn = sqlite3.connect("games.db")
 cursor = conn.cursor()
+print('connected\n')
 
+print('dropping tables...')
 cursor.execute('''
     DROP TABLE IF EXISTS filtered_1;
 ''')
@@ -87,6 +93,12 @@ cursor.execute('''
     DROP TABLE IF EXISTS games_formated;
 ''')
 
+cursor.execute('''
+    DROP TABLE IF EXISTS training_positions;
+''')
+print('tables dropped\n')
+
+print('creating tables...')
 cursor.execute('''
     CREATE TABLE filtered_1 AS
     SELECT id, player_white, player_black, notation, result, timertime, timerinc, rating_white, rating_black, unrated, tournament, rating_change_white, rating_change_black, extra_time_amount, extra_time_trigger FROM games
@@ -123,16 +135,24 @@ cursor.execute('''
         tps TEXT,
         move VARCHAR(9),
         move_number SMALLINT,
+        edited_position BIT,
+        cleaned_move BIT,
         FOREIGN KEY (game_id) REFERENCES games_formated(id)
     )
 ''')
+print('tables created\n')
 
+print('formatting games...')
 cursor.execute('''
     SELECT id, player_white, player_black, notation, result FROM filtered_3
 ''')
 
 all_games = cursor.fetchall()
 
+num_games = len(all_games)
+interval = num_games // 100
+i = 0
+print(('-' * 46) + 'progress' + ('-' * 46))
 for game in all_games:
     game_id, player_white, player_black, notation, result = game
     try:
@@ -148,13 +168,22 @@ for game in all_games:
         INSERT INTO games_formated (id, player_white, player_black, notation, game_length)
             VALUES (?, ?, ?, ?, ?)
     ''', (game_id, player_white, player_black, ptn_notation, game_length))
+    i += 1
+    if i % interval == 0:
+        print('*', end='', flush=True)
+        conn.commit()
 conn.commit()
+print('\ngames formatted\n')
 
+print('cleaning games...')
 cursor.execute('''
     SELECT id, player_white, player_black, notation, game_length FROM games_formated
 ''')
-
 games_formated = cursor.fetchall()
+print(('-' * 46) + 'progress' + ('-' * 46))
+num_games = len(games_formated)
+interval = num_games // 100
+i = 0
 for game in games_formated:
     game_id, player_white, player_black, notation, game_length = game
     moves = get_moves_ordered(notation)
@@ -166,12 +195,22 @@ for game in games_formated:
             DELETE FROM games_formated WHERE id = ?
         ''', (game_id,))
         conn.commit()
+    i += 1
+    if i % interval == 0:
+        print('*', end='', flush=True)
+        conn.commit()
+print('\ngames cleaned\n')
 
+print('creating training positions...')
 cursor.execute('''
     SELECT id, player_white, player_black, notation, game_length FROM games_formated
 ''')
 
 games_formated = cursor.fetchall()
+print(('-' * 46) + 'progress' + ('-' * 46))
+num_games = len(games_formated)
+interval = num_games // 100
+i = 0
 for game in games_formated:
     game_id, player_white, player_black, notation, game_length = game
     moves = get_moves_ordered(notation)
@@ -181,19 +220,74 @@ for game in games_formated:
         move_number += 1
         tps = tak.to_tps()
         cursor.execute('''
-            INSERT INTO training_positions (game_id, tps, move, move_number)
-                VALUES (?, ?, ?, ?)
+            INSERT INTO training_positions (game_id, tps, move, move_number, edited_position, cleaned_move)
+                VALUES (?, ?, ?, ?, 0, 0)
         ''', (game_id, tps, move, move_number))
         tak.make_move(move)
+    i += 1
+    if i % interval == 0:
+        print('*', end='', flush=True)
+        conn.commit()
 conn.commit()
+print('\ntraining positions created\n')
 
-
-positions = cursor.execute('''
-    SELECT * FROM training_positions
+print('filtering training positions...')
+cursor.execute('''
+    SELECT * FROM training_positions WHERE cleaned_move = 0
 ''')
+positions = cursor.fetchall()
+
+print(('-' * 46) + 'progress' + ('-' * 46))
+num_positions = len(positions)
+interval = num_positions // 100
+i = 0
 for position in positions:
-    position_id, game_id, tps, move, move_number = position
-    tak = Tak.from_tps(tps)
+    position_id, game_id, tps, move, move_number, edited_position, cleaned_move = position
+    try:
+        tak = Tak.from_tps(tps)
+        filtered_moves, result = tak.get_all_legal_moves(filtering=1, do_pruning=False, include_result=True)
+    except Exception as e:
+        print(f'\nposition id: {position_id}')
+        raise e
+    if move not in filtered_moves:
+        # the move made is not within the filtered moves
+        if result == 1:
+            # there is a winning move avaliable, so I will edit the position such that they make the winning move instead
+            rand_winning_move = choice(filtered_moves)
+            cursor.execute('''
+                UPDATE training_positions 
+                SET edited_position = 1, move = ?, cleaned_move = 1
+                WHERE id = ?
+            ''', (rand_winning_move, position_id))
+        elif result == 0:
+            # there is no winning move availible and they played a losing move when a neutral move was availible, drop the position
+            cursor.execute('''
+                DELETE FROM training_positions WHERE id = ?
+            ''', (position_id,))
+        elif result == -1:
+            legal_moves = tak.get_all_legal_moves()
+            if move in legal_moves:
+                cursor.execute('''
+                    DELETE FROM training_positions WHERE id = ?
+                ''', (position_id,))
+            else:
+                raise ValueError(f'move {move} is not inside the set of legal moves for position {position_id}')
+        else:
+            # somehow result is not 0, 1 or -1, this branch should never be reached
+            raise ValueError(f'result {result} is not 0, 1 or -1 for position {position_id}')
+    else:
+        cursor.execute('''
+            UPDATE training_positions 
+            SET cleaned_move = 1
+            WHERE id = ?
+        ''', (position_id,))
+    i += 1
+    if i % interval == 0:
+        print('*', end='', flush=True)
+        conn.commit()
+conn.commit()
+print('\ntraining positions filtered\n')
+print('done')
 
-
+# ***************************************
 conn.close()
