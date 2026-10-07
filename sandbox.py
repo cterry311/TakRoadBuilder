@@ -1,5 +1,6 @@
 import sqlite3
 
+
 from game_emulator.game import Tak
 from random import choice
 
