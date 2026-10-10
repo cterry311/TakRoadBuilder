@@ -48,6 +48,7 @@ there would be a sentinel bit at position equivilant to stack height, all bits u
 impl Stack {
     pub const EMPTY: Stack = Stack { bits: 0, height: 0, kind: Kind::Flat };
 
+
     #[inline] pub fn is_empty(self) -> bool { self.height == 0 }
 
     #[inline] pub fn top_color(self) -> Color {
@@ -86,9 +87,9 @@ impl Stack {
     /// remove the bottom `d` pieces from `self` and returns them as a `Stack`
     /// the `kind` of output will be `Kind::Flat` will reject the drop if the entire stack is dropped leaving height 0 behind
     #[inline] pub fn drop_bottom(&mut self, d: u8) -> Stack {
-        debug_assert!(d > 0 && d < self.height);
+        debug_assert!(d > 0 && d <= self.height);
         let r = self.height - d;                       // pieces that stay
-        let dropped = Stack { bits: self.bits >> r, height: d, kind: Kind::Flat };
+        let dropped = Stack { bits: self.bits >> r, height: d, kind: if r == 0 { self.kind } else { Kind::Flat} };
         self.bits &= (1u64 << r) - 1;
         self.height = r;
         dropped
@@ -184,7 +185,7 @@ impl Move {
     }
 
     /// Accepts a PNT formatted `String` and returns a `Move`
-    pub fn from_ptn(ptn_move: String) -> Move {
+    pub fn from_ptn(ptn_move: &str) -> Move {
         let mut direction: i8 = -1;
         if ptn_move.contains('+') {
             direction = 0
@@ -387,6 +388,71 @@ impl Tak {
             );
         }
     }
+
+    fn handle_board_change(&mut self, board_move: Move) {
+        let position = board_move.square();
+        self.history.push(Undo { mv: board_move, flattened: false });
+        self.ply += 1;
+        if board_move.is_slide() {
+            debug_assert!(self.stacks[position].top_color() == self.side_to_move());
+            debug_assert!(self.stacks[position].height <= board_move.carry());
+            let step = DIR_STEP[board_move.dir() as usize];
+            let mask = board_move.mask();
+            let carry_count = board_move.carry();
+            let mut amount: u8 = 0;
+            let mut steps_taken: u8 = 0;
+            let mut carried = self.stacks[position].lift(carry_count);
+            for i in 0..carry_count {
+                amount += 1;
+                steps_taken += 1;
+                if (mask >> i) & 1 == 1 {
+                    if i == carry_count - 1 {
+                        debug_assert!(self.stacks[(position as isize + (steps_taken as isize * step)) as usize].kind == Kind::Cap);
+                        if self.stacks[(position as isize + (steps_taken as isize * step)) as usize].kind == Kind::Wall {
+                            debug_assert!(carried.height == 1);
+                            debug_assert!(carried.kind == Kind::Cap);
+                            self.stacks[(position as isize + (steps_taken as isize * step)) as usize].kind = Kind::Flat;
+                            let move_index = self.history.len() - 1;
+                            self.history[move_index].flattened = true;
+                        }
+                    }
+                    self.stacks[(position as isize + (steps_taken as isize * step)) as usize].put(carried.drop_bottom(amount));
+                    amount = 0;
+                }
+            }
+        } else {
+            debug_assert!(self.stacks[position].is_empty());
+            self.stacks[position].push(
+                self.placing_color(),
+                board_move.place_kind()
+            )
+        }
+    }
+    pub fn make_move(&mut self, board_move: Move) {
+        self.handle_board_change(board_move);
+    }
+
+
+
+    pub fn unmake_move(&mut self) {
+
+    }
+
+    pub fn get_all_legal_moves(&self) -> Vec<Move> {
+        Vec::new()
+    }
+
+    pub fn get_filtered_moves(&self, depth: u8, do_pruning: bool) -> Vec<Move> {
+        Vec::new()
+    }
+
+    pub fn from_tps(tps: &str) -> Tak {
+        Tak::new()
+    }
+
+    pub fn to_tps(&self) -> String {
+        String::new()
+    }
 }
 
 #[cfg(test)]
@@ -423,6 +489,11 @@ mod tests {
         assert_eq!(stack.top_color(), Color::Black);
         assert_eq!(stack.kind, Kind::Wall);
         assert_eq!(stack.height, 1);
+        stack_bottom.put(stack);
+        assert_eq!(stack_bottom.height, 2);
+        let dropped_parts = stack_bottom.drop_bottom(2);
+        assert_eq!(dropped_parts.height, 2);
+        assert_eq!(stack_bottom.height, 0);
     }
 
     #[test]
@@ -447,14 +518,14 @@ mod tests {
 
         println!("move_1: {}", move_1);
 
-        let converted_1 = Move::from_ptn(move_1.clone());
-        let converted_2 = Move::from_ptn(move_2.clone());
-        let converted_3 = Move::from_ptn(move_3.clone());
+        let converted_1 = Move::from_ptn(&move_1);
+        let converted_2 = Move::from_ptn(&move_2);
+        let converted_3 = Move::from_ptn(&move_3);
 
-        let converted_4 = Move::from_ptn(move_4.clone());
-        let converted_5 = Move::from_ptn(move_5.clone());
-        let converted_6 = Move::from_ptn(move_6.clone());
-        let converted_7 = Move::from_ptn(move_7.clone());
+        let converted_4 = Move::from_ptn(&move_4);
+        let converted_5 = Move::from_ptn(&move_5);
+        let converted_6 = Move::from_ptn(&move_6);
+        let converted_7 = Move::from_ptn(&move_7);
 
         assert_eq!(converted_1.is_slide(), false);
         assert_eq!(converted_2.is_slide(), false);
