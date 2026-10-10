@@ -58,6 +58,7 @@ impl Stack {
     /// Place one piece on top (placements only ever target empty squares).
     #[inline] pub fn push(&mut self, color: Color, kind: Kind) {
         debug_assert!(self.height < 63);
+        debug_assert!(self.kind != Kind::Cap && self.kind != Kind::Wall);
         self.bits = (self.bits << 1) | color as u64;
         self.height += 1;
         self.kind = kind;
@@ -194,7 +195,7 @@ impl Move {
         } else if ptn_move.contains('>') {
             direction = 3
         }
-        if direction != -1 {
+        if direction == -1 {
             let kind = match ptn_move.as_bytes()[0] {
                 b'S' => Kind::Wall,
                 b'C' => Kind::Cap,
@@ -385,5 +386,100 @@ impl Tak {
                 "piece count mismatch for color {c}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stack_behaves_as_expected() {
+        let mut stack = Stack::EMPTY;
+        assert!(stack.is_empty());
+        stack.push(Color::White, Kind::Flat);
+        assert_eq!(stack.height, 1);
+        assert_eq!(stack.kind, Kind::Flat);
+        assert_eq!(stack.top_color(), Color::White);
+        stack.push(Color::Black, Kind::Wall);
+        assert_eq!(stack.kind, Kind::Wall);
+        assert_eq!(stack.height, 2);
+        assert_eq!(stack.top_color(), Color::Black);
+
+        let mut top_stone = stack.lift(1);
+        assert_eq!(top_stone.top_color(), Color::Black);
+        assert_eq!(top_stone.height, 1);
+
+        assert_eq!(stack.top_color(), Color::White);
+        assert_eq!(stack.height, 1);
+        stack.put(top_stone);
+        assert_eq!(stack.top_color(), Color::Black);
+        assert_eq!(stack.height, 2);
+        assert_eq!(stack.kind, Kind::Wall);
+        let mut stack_bottom = stack.drop_bottom(1);
+        assert_eq!(stack_bottom.top_color(), Color::White);
+        assert_eq!(stack_bottom.height, 1);
+
+        assert_eq!(stack.top_color(), Color::Black);
+        assert_eq!(stack.kind, Kind::Wall);
+        assert_eq!(stack.height, 1);
+    }
+
+    #[test]
+    fn move_behaves_as_expected() {
+        let place_move = Move::place(0, Kind::Flat);
+        assert_eq!(place_move.place_kind(), Kind::Flat);
+        assert_eq!(place_move.is_slide(), false);
+        let slide_move = Move::slide(0, 0, 1);
+        assert_eq!(slide_move.is_slide(), true);
+    }
+
+    #[test]
+    fn ptn_conversion_words() {
+        let move_1 = String::from("c5");
+        let move_2 = String::from("Ca2");
+        let move_3 = String::from("Sf6");
+
+        let move_4 = String::from("d5+");
+        let move_5 = String::from("6a3-");
+        let move_6 = String::from("4d5>211");
+        let move_7 = String::from("6e2<2112");
+
+        println!("move_1: {}", move_1);
+
+        let converted_1 = Move::from_ptn(move_1.clone());
+        let converted_2 = Move::from_ptn(move_2.clone());
+        let converted_3 = Move::from_ptn(move_3.clone());
+
+        let converted_4 = Move::from_ptn(move_4.clone());
+        let converted_5 = Move::from_ptn(move_5.clone());
+        let converted_6 = Move::from_ptn(move_6.clone());
+        let converted_7 = Move::from_ptn(move_7.clone());
+
+        assert_eq!(converted_1.is_slide(), false);
+        assert_eq!(converted_2.is_slide(), false);
+        assert_eq!(converted_3.is_slide(), false);
+        assert_eq!(converted_1.place_kind(), Kind::Flat);
+        assert_eq!(converted_2.place_kind(), Kind::Cap);
+        assert_eq!(converted_3.place_kind(), Kind::Wall);
+
+        assert_eq!(converted_4.is_slide(), true);
+        assert_eq!(converted_5.is_slide(), true);
+        assert_eq!(converted_6.is_slide(), true);
+        assert_eq!(converted_7.is_slide(), true);
+
+        assert_eq!(converted_1.to_ptn(), move_1);
+        assert_eq!(converted_2.to_ptn(), move_2);
+        assert_eq!(converted_3.to_ptn(), move_3);
+        assert_eq!(converted_4.to_ptn(), move_4);
+        assert_eq!(converted_5.to_ptn(), move_5);
+        assert_eq!(converted_6.to_ptn(), move_6);
+        assert_eq!(converted_7.to_ptn(), move_7);
+    }
+
+    #[test]
+    fn tak_methods_dont_crash() {
+        let mut tak = Tak::new();
+        assert_eq!(tak.move_number(), 1);
     }
 }
