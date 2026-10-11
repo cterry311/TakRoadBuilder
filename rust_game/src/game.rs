@@ -84,6 +84,15 @@ impl Stack {
         self.kind = chunk.kind;
     }
 
+    #[inline] pub fn put_bottom(&mut self, chunk: Stack) {
+        debug_assert!(self.height + chunk.height <= 63);
+        if self.height == 0 {
+            self.kind = chunk.kind;
+        }
+        self.bits = (chunk.bits << self.height) | self.bits;
+        self.height += chunk.height;
+    }
+
     /// remove the bottom `d` pieces from `self` and returns them as a `Stack`
     /// the `kind` of output will be `Kind::Flat` will reject the drop if the entire stack is dropped leaving height 0 behind
     #[inline] pub fn drop_bottom(&mut self, d: u8) -> Stack {
@@ -413,75 +422,93 @@ impl Tak {
         }
     }
 
-    fn handle_board_change(&mut self, board_move: Move) {
-        let position = board_move.square();
-        self.history.push(Undo { mv: board_move, flattened: false });
-        self.ply += 1;
-        if board_move.is_slide() {
-            debug_assert!(self.stacks[position].top_color() == self.side_to_move());
-            debug_assert!(self.stacks[position].height <= board_move.carry());
-            let step = DIR_STEP[board_move.dir() as usize];
-            let mask = board_move.mask();
-            let carry_count = board_move.carry();
-            let mut amount: u8 = 0;
-            let mut steps_taken: u8 = 0;
-            let mut carried = self.stacks[position].lift(carry_count);
-            for i in 0..carry_count {
-                amount += 1;
-                steps_taken += 1;
-                if (mask >> i) & 1 == 1 {
-                    let position_at_i = (position as isize + (steps_taken as isize * step)) as usize;
-                    let mut stack_at_i = self.stacks[position_at_i];
-                    clear_bit(&mut self.top[0], position_at_i);
-                    clear_bit(&mut self.top[1], position_at_i);
-                    clear_bit(&mut self.walls, position_at_i);
-                    clear_bit(&mut self.caps, position_at_i);
-                    if i == carry_count - 1 {
-                        debug_assert!(stack_at_i.kind != Kind::Cap);
-                        if stack_at_i.kind == Kind::Flat {}
-                        else if stack_at_i.kind == Kind::Wall { // detection for when a wall is being crushed by capstone
-                            debug_assert!(carried.height == 1);
-                            debug_assert!(carried.kind == Kind::Cap);
-                            stack_at_i.kind = Kind::Flat;
-                            let move_index = self.history.len() - 1;
-                            self.history[move_index].flattened = true;
-                            set_bit(&mut self.caps, position_at_i);
-                        } else if carried.kind == Kind::Wall {
-                            debug_assert!(stack_at_i.kind == Kind::Flat);
-                            set_bit(&mut self.walls, position_at_i);
-                        } else if stack_at_i.kind == Kind::Cap {
-                            set_bit(&mut self.caps, position_at_i);
-                        }
-                    }
-                    stack_at_i.put(carried.drop_bottom(amount));
-                    set_bit(&mut self.top[stack_at_i.top_color().idx()], position_at_i);
-                    amount = 0;
+    fn handle_board_change(&mut self, mv: Move) {
+        let origin = mv.square();
+        let mut flattened = false;
+
+        if mv.is_slide() {
+            debug_assert!(self.stacks[origin].top_color() == self.side_to_move());
+            debug_assert!(mv.carry() <= self.stacks[origin].height);
+
+            let step = DIR_STEP[mv.dir() as usize];
+            let (drops, n) = mv.drops();
+            let mut carried = self.stacks[origin].lift(mv.carry());
+            self.refresh_square(origin);
+
+            let mut sq = origin as isize;
+            for i in 0..n {
+                sq += step;
+                let target = sq as usize;
+                if i == n - 1 {
+                    let t = self.stacks[target];
+                    flattened = t.height > 0 && t.kind == Kind::Wall;
+                    debug_assert!(!flattened || (carried.kind == Kind::Cap && carried.height == 1));
+                    debug_assert!(t.height == 0 || t.kind != Kind::Cap);
+                    self.stacks[target].put(carried);
+                } else {
+                    let chunk = carried.drop_bottom(drops[i]);
+                    self.stacks[target].put(chunk);
                 }
+                self.refresh_square(target);
             }
         } else {
-            debug_assert!(self.stacks[position].is_empty());
-            self.stacks[position].push(
-                self.placing_color(),
-                board_move.place_kind()
-            );
-            set_bit(&mut self.top[self.placing_color().idx()], position);
-
-            if board_move.place_kind() == Kind::Flat {}
-            else if board_move.place_kind() == Kind::Wall {
-                set_bit(&mut self.walls, position);
+            debug_assert!(self.stacks[origin].is_empty());
+            let color = self.placing_color();
+            let kind = mv.place_kind();
+            self.stacks[origin].push(color, kind);
+            if kind == Kind::Cap {
+                self.caps_left[color.idx()] -= 1;
             } else {
-                set_bit(&mut self.caps, position);
+                self.stones_left[color.idx()] -= 1;
             }
+            self.refresh_square(origin);
         }
+
+        self.history.push(Undo { mv, flattened });
+    }
+
+    fn find_result(&mut self) { // the method for checking for a win or loss, or if the game is ongoing
+
     }
     pub fn make_move(&mut self, board_move: Move) {
         self.handle_board_change(board_move);
+        self.ply += 1;
+        self.find_result();
     }
 
 
+    fn undo_board_change(&mut self, mv: Move, flattened: bool) {
+        let origin = mv.square();
+        if mv.is_slide() {
+            let step = DIR_STEP[mv.dir() as usize] * -1;
+            let (drops, n) = mv.drops();
+            let mut carried = Stack::EMPTY;
+            for i in (1..=n).rev() {
+                let location = (origin as isize + (step * i as isize)) as usize;
+                carried.put_bottom(self.stacks[location].lift(drops[i]));
+                if i == n - 1 && flattened {
+                    self.stacks[location].kind = Kind::Wall
+                }
+                self.refresh_square(location);
+            }
+            self.stacks[origin].put(carried);
+            self.refresh_square(origin);
+        } else {
+            self.stacks[origin] = Stack::EMPTY;
+            if mv.place_kind() == Kind::Cap {
+                self.caps_left[self.placing_color().idx()] += 1;
+            } else {
+                self.stones_left[self.placing_color().idx()] += 1;
+            }
+            self.refresh_square(origin);
+        }
+    }
 
     pub fn unmake_move(&mut self) {
-
+        let undo = self.history.pop().unwrap();
+        self.ply -= 1;
+        self.undo_board_change(undo.mv, undo.flattened);
+        self.result = GameResult::Ongoing;
     }
 
     pub fn get_all_legal_moves(&self) -> Vec<Move> {
