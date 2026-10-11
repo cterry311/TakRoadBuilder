@@ -249,6 +249,30 @@ impl Move {
     }
 }
 
+#[inline] fn set_bit(bitboard: &mut u64, sq: usize) {
+    *bitboard |= 1u64 << sq;
+}
+
+#[inline] fn clear_bit(bitboard: &mut u64, sq: usize) {
+    *bitboard &= !(1u64 << sq);
+}
+
+#[inline] fn flip_bit(bitboard: &mut u64, sq: usize) {
+    *bitboard ^= 1u64 << sq;
+}
+
+#[inline] fn write_bit(bitboard: &mut u64, sq: usize, val: u8) {
+    if val == 0 {
+        clear_bit(bitboard, sq);
+    } else {
+        set_bit(bitboard, sq);
+    }
+}
+
+#[inline] fn get_bit(bitboard: u64, sq: usize) -> u8 {
+    ((bitboard >> sq) & 1) as u8
+}
+
 // ---------------------------------------------------------------- undo
 
 #[derive(Clone, Copy, Debug)]
@@ -406,17 +430,31 @@ impl Tak {
                 amount += 1;
                 steps_taken += 1;
                 if (mask >> i) & 1 == 1 {
+                    let position_at_i = (position as isize + (steps_taken as isize * step)) as usize;
+                    let mut stack_at_i = self.stacks[position_at_i];
+                    clear_bit(&mut self.top[0], position_at_i);
+                    clear_bit(&mut self.top[1], position_at_i);
+                    clear_bit(&mut self.walls, position_at_i);
+                    clear_bit(&mut self.caps, position_at_i);
                     if i == carry_count - 1 {
-                        debug_assert!(self.stacks[(position as isize + (steps_taken as isize * step)) as usize].kind == Kind::Cap);
-                        if self.stacks[(position as isize + (steps_taken as isize * step)) as usize].kind == Kind::Wall {
+                        debug_assert!(stack_at_i.kind != Kind::Cap);
+                        if stack_at_i.kind == Kind::Flat {}
+                        else if stack_at_i.kind == Kind::Wall { // detection for when a wall is being crushed by capstone
                             debug_assert!(carried.height == 1);
                             debug_assert!(carried.kind == Kind::Cap);
-                            self.stacks[(position as isize + (steps_taken as isize * step)) as usize].kind = Kind::Flat;
+                            stack_at_i.kind = Kind::Flat;
                             let move_index = self.history.len() - 1;
                             self.history[move_index].flattened = true;
+                            set_bit(&mut self.caps, position_at_i);
+                        } else if carried.kind == Kind::Wall {
+                            debug_assert!(stack_at_i.kind == Kind::Flat);
+                            set_bit(&mut self.walls, position_at_i);
+                        } else if stack_at_i.kind == Kind::Cap {
+                            set_bit(&mut self.caps, position_at_i);
                         }
                     }
-                    self.stacks[(position as isize + (steps_taken as isize * step)) as usize].put(carried.drop_bottom(amount));
+                    stack_at_i.put(carried.drop_bottom(amount));
+                    set_bit(&mut self.top[stack_at_i.top_color().idx()], position_at_i);
                     amount = 0;
                 }
             }
@@ -425,7 +463,15 @@ impl Tak {
             self.stacks[position].push(
                 self.placing_color(),
                 board_move.place_kind()
-            )
+            );
+            set_bit(&mut self.top[self.placing_color().idx()], position);
+
+            if board_move.place_kind() == Kind::Flat {}
+            else if board_move.place_kind() == Kind::Wall {
+                set_bit(&mut self.walls, position);
+            } else {
+                set_bit(&mut self.caps, position);
+            }
         }
     }
     pub fn make_move(&mut self, board_move: Move) {
