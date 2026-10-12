@@ -1,5 +1,7 @@
 // this file was made with significant assistance from AI
 
+use std::cmp::Ordering;
+
 pub const N: usize = 6;
 pub const STRIDE: usize = 8;
 pub const SQUARES: usize = N * STRIDE;      // 48 slots, 12 are padding
@@ -228,9 +230,10 @@ impl Move {
             b'4' => 4,
             b'5' => 5,
             b'6' => 6,
-            _ => 1,
+            b'1' => 1,
+            _ => 0, // the carry here is actually 1, but I need to be able to distinguish it from the explisit 1 case
         };
-        if carry == 1 {
+        if carry == 0 {
             let file = (ptn_move.as_bytes()[0] - b'a') as usize;
             let rank = (ptn_move.as_bytes()[1] - b'1') as usize;
             let sq = rank * 8 + file;
@@ -255,6 +258,22 @@ impl Move {
         let rank = (ptn_move.as_bytes()[2] - b'1') as usize;
         let sq = rank * 8 + file;
         Move::slide(sq, direction as u8, move_mask)
+    }
+
+    /// Bitboard of every square this move changes (origin plus landing squares).
+    #[inline] pub fn touched(self) -> u64 {
+        let origin = self.square();
+        let mut bits = 1u64 << origin;
+        if self.is_slide() {
+            let step = DIR_STEP[self.dir() as usize];
+            let (_, n) = self.drops();
+            let mut sq = origin as isize;
+            for _ in 0..n {
+                sq += step;
+                bits |= 1u64 << sq;
+            }
+        }
+        bits
     }
 }
 
@@ -291,9 +310,36 @@ pub struct Undo {
     pub flattened: bool,
 }
 
+// ------------- stuff needed for road detection -----------------------
+
+const LEFT_EDGE: u64 = 0x0101_0101_0101;     // bits 0, 8, ..., 40
+const RIGHT_EDGE: u64 = LEFT_EDGE << 5;
+const BOTTOM_EDGE: u64 = 0x3F;
+const TOP_EDGE: u64 = 0x3F << 40;
+
+/// Connected component of `road` containing `seed` (seed must be a subset of road).
+/// No column masks are needed: shifts that cross a row land on padding bits,
+/// which are never set in `road`.
+#[inline] fn flood(seed: u64, road: u64) -> u64 {
+    let mut f = seed;
+    loop {
+        let next = (f | (f << 1) | (f >> 1) | (f << 8) | (f >> 8)) & road;
+        if next == f { return f; }
+        f = next;
+    }
+}
+
+#[inline] fn spans(comp: u64) -> bool {
+    ((comp & LEFT_EDGE) != 0 && (comp & RIGHT_EDGE) != 0)
+        || ((comp & BOTTOM_EDGE) != 0 && (comp & TOP_EDGE) != 0)
+}
+
 // ---------------------------------------------------------------- game
 
-#[derive(Clone)]
+
+
+
+#[derive(Clone, Debug)]
 pub struct Tak {
     // ground truth
     pub stacks: [Stack; SQUARES],
@@ -465,40 +511,98 @@ impl Tak {
         }
 
         self.history.push(Undo { mv, flattened });
+
     }
+
+
+
+    fn color_has_new_road(&self, c: Color, touched: u64) -> bool {
+        let road = self.road(c);
+        if road.count_ones() < 6 { return false; }
+        let mut seeds = touched & road;
+        while seeds != 0 {
+            let seed = seeds & seeds.wrapping_neg();   // lowest set bit
+            let comp = flood(seed, road);
+            if spans(comp) { return true; }
+            seeds &= !comp;                            // skip seeds in the same component
+        }
+        false
+    }
+
+    /// Sets self.result and returns true if the last move created a road.
+    /// Must run before ply is incremented, so side_to_move() is the mover.
+    fn identify_road_win(&mut self) -> bool {
+        let last_move_index = self.history.len() - 1;
+        let touched = self.history[last_move_index].mv.touched();
+        let mover = self.side_to_move();
+        // The mover wins if both players complete a road, so check the mover first.
+        for c in [mover, mover.other()] {
+            if self.color_has_new_road(c, touched) {
+                self.result = match c {
+                    Color::White => GameResult::WhiteWin,
+                    Color::Black => GameResult::BlackWin,
+                };
+                return true;
+            }
+        }
+        false
+    }
+
+    #[inline] fn identify_flat_win(&self) -> bool {
+        (((self.top[0] | self.top[1]) & BOARD_MASK) == BOARD_MASK) // all spaces on board are occupied
+        || (self.caps_left[0] + self.stones_left[0] == 0) // white has no peices left
+            || (self.caps_left[1] + self.stones_left[1] == 0) // black has no peices left
+    }
+
 
     fn find_result(&mut self) { // the method for checking for a win or loss, or if the game is ongoing
-
+        if self.ply >= 10 { // the board is 6 spaces across, so 5 is the first ply where a road win is possible
+            if self.identify_road_win() {
+                return // road wins take priority over flat wins, so if a road win happened, a flat check is redundant
+            }
+        }
+        if self.ply >= 35 { // there are 36 spaces on the board, so 35 is the first ply where a flat win is possible
+            if self.identify_flat_win() {
+                self.result = match self.flat_tops(Color::White).count_ones().cmp(&self.flat_tops(Color::Black).count_ones()) {
+                    Ordering::Equal => GameResult::Draw,
+                    Ordering::Greater => GameResult::WhiteWin,
+                    Ordering::Less => GameResult::BlackWin,
+                }
+            }
+        }
     }
+
     pub fn make_move(&mut self, board_move: Move) {
         self.handle_board_change(board_move);
-        self.ply += 1;
         self.find_result();
+        self.ply += 1;
     }
 
 
     fn undo_board_change(&mut self, mv: Move, flattened: bool) {
         let origin = mv.square();
         if mv.is_slide() {
-            let step = DIR_STEP[mv.dir() as usize] * -1;
+            let step = -DIR_STEP[mv.dir() as usize];
             let (drops, n) = mv.drops();
             let mut carried = Stack::EMPTY;
             for i in (1..=n).rev() {
-                let location = (origin as isize + (step * i as isize)) as usize;
-                carried.put_bottom(self.stacks[location].lift(drops[i]));
-                if i == n - 1 && flattened {
-                    self.stacks[location].kind = Kind::Wall
+                let location = (origin as isize - step * i as isize) as usize;
+                let chunk = self.stacks[location].lift(drops[i - 1]);
+                carried.put_bottom(chunk);
+                if i == n && flattened {
+                    self.stacks[location].kind = Kind::Wall;
                 }
                 self.refresh_square(location);
             }
             self.stacks[origin].put(carried);
             self.refresh_square(origin);
         } else {
+            let color = self.stacks[origin].top_color();
             self.stacks[origin] = Stack::EMPTY;
             if mv.place_kind() == Kind::Cap {
-                self.caps_left[self.placing_color().idx()] += 1;
+                self.caps_left[color.idx()] += 1;
             } else {
-                self.stones_left[self.placing_color().idx()] += 1;
+                self.stones_left[color.idx()] += 1;
             }
             self.refresh_square(origin);
         }
@@ -515,8 +619,16 @@ impl Tak {
         Vec::new()
     }
 
-    pub fn get_filtered_moves(&self, depth: u8, do_pruning: bool) -> Vec<Move> {
-        Vec::new()
+    pub fn get_filtered_moves(&self, depth: u8, do_pruning: bool) -> (Vec<Move>, GameResult) {
+        (Vec::new(), GameResult::Ongoing)
+    }
+
+    fn filter_base(&self, do_pruning: bool) -> (Vec<Move>, GameResult) {
+        (Vec::new(), GameResult::Ongoing)
+    }
+
+    fn filter_recursive(&self, depth: u8, do_pruning: bool) -> (Vec<Move>, GameResult) {
+        (Vec::new(), GameResult::Ongoing)
     }
 
     pub fn from_tps(tps: &str) -> Tak {
@@ -525,6 +637,16 @@ impl Tak {
 
     pub fn to_tps(&self) -> String {
         String::new()
+    }
+}
+
+impl PartialEq for Tak {
+    fn eq(&self, other: &Self) -> bool {
+        self.stacks == other.stacks
+            && self.stones_left == other.stones_left
+            && self.caps_left == other.caps_left
+            && self.ply == other.ply
+            && self.result == other.result
     }
 }
 
@@ -625,5 +747,210 @@ mod tests {
     fn tak_methods_dont_crash() {
         let mut tak = Tak::new();
         assert_eq!(tak.move_number(), 1);
+    }
+
+    #[test]
+    fn tak_board_state_changes_work() {
+        let move_sequence = [
+            "a6", "f6",
+            "d4", "c4",
+            "d3", "c3",
+            "d5", "Ce3",
+            "d6", "c2",
+            "Cc5", "d2",
+            "b4", "e4",
+            "e6", "a4",
+            "b5", "a5",
+            "b3", "1c4<1",
+            "c4", "2b4-2",
+            "1c5<1", "1e4<1",
+            "c5", "2d4+2",
+            "2b5-11", "e2",
+            "c6", "1c3+1",
+            "a3", "2c4+2",
+            "b5", "b6",
+            "1b5>1", "3d5<3",
+            "1c6-1", "Sc4",
+            "6c5<33", "1c4+1",
+            "d4", "1a4+1",
+            "1b5<1", "1a6-1",
+            "Sa4", "6a5+6",
+            "Sc6", "d5",
+            "e5", "f3",
+            "c4", "1d5-1",
+            "1d3+1", "3c5-3",
+            "3b3>12", "4c4-4",
+            "1d3<1", "1a5>1",
+            "4c3+4", "3b5-12",
+            "d5", "1c2+1",
+            "2c4-2", "1d3+1",
+            "1c4>1", "2b4>11",
+            "1c4>1", "a1",
+            "4c3-13",
+        ];
+        let mut tak = Tak::new();
+        let mut forward = vec![tak.clone()];          // forward[k] = state after k moves
+        for ptn in &move_sequence {
+            tak.make_move(Move::from_ptn(ptn));
+            forward.push(tak.clone());
+        }
+        for k in (0..move_sequence.len()).rev() {
+            println!("unmaking move {} {}", k + 1, move_sequence[k]);
+            tak.unmake_move();
+            assert_eq!(tak, forward[k], "mismatch after unmaking move {}", k + 1);
+        }
+    }
+
+    #[test]
+    fn tak_win_detection_works() {
+        let black_win_test  = [
+            "e6", "a1",
+            "b1", "e5",
+            "a2", "e4",
+            "b2", "e3",
+            "a3", "e2",
+            "b3", "Cf6",
+            "a4", "Sf5",
+            "b4", "Sf4",
+            "a5", "Sf3",
+            "b5", "f6<",
+            "c1", "Sa6",
+            "c2", "Sb6",
+            "c3", "Sc6",
+            "c4", "Sd6",
+            "c5", "Sf6",
+            "d5", "Sf2",
+            "d1", "d4",
+            "d1<", "d1",
+            "2c1>", "Sc1",
+            "d2", "Sd3",
+            "3d1+", "f1",
+            "4d2-", "Sd2",
+        ];
+        let mut tak = Tak::new();
+        for ptn in &black_win_test {
+            tak.make_move(Move::from_ptn(ptn));
+            assert_eq!(tak.result, GameResult::Ongoing);
+        }
+        tak.make_move(Move::from_ptn("3d1>12"));
+        assert_eq!(tak.result, GameResult::BlackWin);
+
+        let dual_road_white_win = [
+            "f6", "a1",
+            "a2", "f5",
+            "a3", "f4",
+            "a4", "b1",
+            "a5", "b2",
+            "c1", "b3",
+            "c2", "b4",
+            "c3", "b5",
+            "c4", "d2",
+            "d6", "c6",
+            "d6<", "f3",
+        ];
+
+        let mut tak = Tak::new();
+        for ptn in &dual_road_white_win {
+            tak.make_move(Move::from_ptn(ptn));
+            assert_eq!(tak.result, GameResult::Ongoing);
+        }
+        tak.make_move(Move::from_ptn("2c6<11"));
+        assert_eq!(tak.result, GameResult::WhiteWin);
+
+        let running_out_of_stones = [
+            "b6", "e6",
+            "Cc1", "e4",
+            "c5", "Ce1",
+            "d6", "a1",
+            "Sd5", "d2",
+            "f1", "f6",
+            "d4", "a6",
+            "d4>", "Sc3",
+            "f4", "e1>",
+            "b2", "Sc2",
+            "e6>", "a3",
+            "d1", "Se2",
+            "b4", "Sb1",
+            "d1+", "d3",
+            "c1+", "a4",
+            "e5", "c1",
+            "f2", "a2",
+            "a5", "Sd1",
+            "Se3", "d3-",
+            "d4", "d3",
+            "b2<", "f3",
+            "a5-", "f3+",
+            "2a2-", "3d2+12",
+            "b3", "a3>",
+            "f3", "a5",
+            "2c2-", "b2",
+            "2a4+11", "2a5>11",
+            "c6", "e2>",
+            "d5-", "f5",
+            "Sa5", "2f4-",
+            "3d4-12", "b6<",
+            "Sa3", "3a6>111",
+            "c4", "a4",
+            "c6-", "f5<",
+            "2c5<", "a4>",
+            "Se6", "2d6<",
+            "c4<", "a6",
+            "3b4-12", "e1",
+            "3b5+", "3c6-",
+            "3b3+12", "4c5<",
+            "Sa2", "6b5-51",
+            "a4", "b3+",
+            "Sf4", "c3>",
+            "2e4+", "4d3+13",
+            "Sc2", "Sc3",
+            "e2", "5b4<",
+            "Sd6", "3d5>12",
+            "2b6<", "2f5+",
+            "f4-", "2b6-",
+            "a3+", "4f6-13",
+            "5a4>1112", "a3",
+            "b3", "2b5-11",
+        ];
+
+        let mut tak = Tak::new();
+        for ptn in &running_out_of_stones {
+            tak.make_move(Move::from_ptn(ptn));
+            assert_eq!(tak.result, GameResult::Ongoing);
+        }
+        tak.make_move(Move::from_ptn("d3"));
+        assert_eq!(tak.result, GameResult::WhiteWin);
+
+        let board_space_used_up = [
+            "f1", "f2",
+            "f3", "f4",
+            "f5", "f6",
+            "e6", "Se5",
+            "e4", "e3",
+            "e2", "e1",
+            "d1", "d2",
+            "d3", "d4",
+            "d5", "d6",
+            "d5-", "Cd5",
+            "c6", "c5",
+            "c6>", "c6",
+            "2d6>", "d6",
+            "2d4-", "d4",
+            "c4", "c3",
+            "c2", "c1",
+            "b1", "b2",
+            "b3", "b4",
+            "b5", "b6",
+            "a6", "a5",
+            "a4", "a3",
+            "a2", "c3<",
+            "a1",
+        ];
+        let mut tak = Tak::new();
+        for ptn in &board_space_used_up {
+            tak.make_move(Move::from_ptn(ptn));
+            assert_eq!(tak.result, GameResult::Ongoing);
+        }
+        tak.make_move(Move::from_ptn("b3>"));
+        assert_eq!(tak.result, GameResult::Draw);
     }
 }
