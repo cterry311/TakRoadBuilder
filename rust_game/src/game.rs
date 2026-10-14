@@ -1,6 +1,7 @@
 // this file was made with significant assistance from AI
 
 use std::cmp::Ordering;
+use once_cell::sync::Lazy;
 
 pub const N: usize = 6;
 pub const STRIDE: usize = 8;
@@ -297,9 +298,15 @@ impl Move {
     }
 }
 
+#[inline] fn shift_bit(bitboard: &u64, shift: isize) -> u64 {
+    if shift >= 0 { bitboard << shift } else { bitboard >> (-shift) }
+}
+
 #[inline] fn get_bit(bitboard: u64, sq: usize) -> u8 {
     ((bitboard >> sq) & 1) as u8
 }
+
+
 
 // ---------------------------------------------------------------- undo
 
@@ -333,6 +340,42 @@ const TOP_EDGE: u64 = 0x3F << 40;
     ((comp & LEFT_EDGE) != 0 && (comp & RIGHT_EDGE) != 0)
         || ((comp & BOTTOM_EDGE) != 0 && (comp & TOP_EDGE) != 0)
 }
+const CARRY_OPTIONS: u8 = 6; // values 1..=6 are valid
+const LENGTH_OPTIONS: u8 = 6; // values 0..6 are valid
+const SOFT_END: u8 = 2; // values 0 and 1 are valid, effectivly this is a bianary flip
+const ARRAY_LENGTH: u8 = CARRY_OPTIONS * LENGTH_OPTIONS * SOFT_END; // 72, note that only about half of these are valid
+
+/// index will be computed to get a uniqe value from the following
+fn get_mask_index(carry_capacity: &u8, drop_length: &u8, soft_end: &u8) -> usize {
+    ((carry_capacity - 1) + (drop_length * 6) + (soft_end * 36)) as usize
+}
+
+
+static DROP_MASKS: Lazy<[Vec<u8>; ARRAY_LENGTH as usize]> = Lazy::new(|| {
+    let mut masks = [const { Vec::<u8>::new() }; ARRAY_LENGTH as usize];
+    assert_eq!(masks.len(), 72);
+    for carry in 1..=CARRY_OPTIONS {
+        for length in 0..LENGTH_OPTIONS {
+            for soft in 0..SOFT_END {
+                if length > carry {
+                    continue;
+                }
+                if length == 5 && soft == 1 {
+                    continue;
+                }
+                for mask in 1..(1u8 << carry) {
+                    let p = mask.count_ones() as u8;
+                    let c = 8 - mask.leading_zeros() as u8;               // this mask's own carry
+                    let last_is_one = c == 1 || (mask >> (c - 2)) & 1 == 1;
+                    if p <= length || (soft == 1 && p == length + 1 && last_is_one) {
+                        masks[get_mask_index(&carry, &length, &soft)].push(mask);
+                    }
+                }
+            }
+        }
+    }
+    masks
+});
 
 // ---------------------------------------------------------------- game
 
@@ -615,8 +658,72 @@ impl Tak {
         self.result = GameResult::Ongoing;
     }
 
+    #[inline] fn get_move_distance(&self, sq: usize, step: isize, border: u64, max_steps: usize) -> (usize, u8) {
+        let mut point: u64 = 1u64 << sq;
+        for i in 0..max_steps {
+            if point & border != 0 {
+                return (i, 0)
+            }
+            point = shift_bit(&point, step);
+            if point & self.caps != 0 {
+                return (i, 0)
+            }
+            if point & self.walls != 0 {
+                return (i, 1)
+            }
+        }
+        (max_steps, 0)
+    }
+
+
     pub fn get_all_legal_moves(&self) -> Vec<Move> {
-        Vec::new()
+        assert_eq!(self.result, GameResult::Ongoing);
+        let mut moves = Vec::new();
+        let side = self.side_to_move();
+        let stones_remain = self.stones_left[side.idx()] > 0;
+        let caps_remain = self.caps_left[side.idx()] > 0;
+        for y in 0..6 {
+            for x in 0..6 {
+                let square: usize = y * 8 + x;
+                let stack: Stack = self.stacks[square];
+                if stack.height == 0 { // the space is empty
+                    if stones_remain {
+                        moves.push(Move::place(square, Kind::Flat));
+                        moves.push(Move::place(square, Kind::Wall));
+                    }
+                    if caps_remain {
+                        moves.push(Move::place(square, Kind::Cap));
+                    }
+                } else {
+                    if stack.top_color() == side && !self.in_opening() {
+                        let (up_dist, soft_up) = self.get_move_distance(square, 8, TOP_EDGE, stack.height as usize);
+                        let (down_dist, soft_down) = self.get_move_distance(square, -8, BOTTOM_EDGE, stack.height as usize);
+                        let (left_dist, soft_left) = self.get_move_distance(square, -1, LEFT_EDGE, stack.height as usize);
+                        let (right_dist, soft_right) = self.get_move_distance(square, 1, RIGHT_EDGE, stack.height as usize);
+                        let has_cap_top = if stack.kind == Kind::Cap { 1u8 } else { 0u8 };
+                        let move_capacity = if stack.height > 6 { 6 } else { stack.height };
+                        let up_masks = &DROP_MASKS[get_mask_index(&move_capacity, &(up_dist as u8), &(soft_up & has_cap_top))];
+                        let down_masks = &DROP_MASKS[get_mask_index(&move_capacity, &(down_dist as u8), &(soft_down & has_cap_top))];
+                        let left_masks = &DROP_MASKS[get_mask_index(&move_capacity, &(left_dist as u8), &(soft_left & has_cap_top))];
+                        let right_masks = &DROP_MASKS[get_mask_index(&move_capacity, &(right_dist as u8), &(soft_right & has_cap_top))];
+
+                        for mask in up_masks {
+                            moves.push(Move::slide(square, 0, *mask));
+                        }
+                        for mask in down_masks {
+                            moves.push(Move::slide(square, 1, *mask));
+                        }
+                        for mask in left_masks {
+                            moves.push(Move::slide(square, 2, *mask));
+                        }
+                        for mask in right_masks {
+                            moves.push(Move::slide(square, 3, *mask));
+                        }
+                    }
+                }
+            }
+        }
+        moves
     }
 
     pub fn get_filtered_moves(&self, depth: u8, do_pruning: bool) -> (Vec<Move>, GameResult) {
@@ -637,6 +744,11 @@ impl Tak {
 
     pub fn to_tps(&self) -> String {
         String::new()
+    }
+
+    /// convert the board state to a tensor that can be used for machine learning, tensor output is as follows,
+    pub fn to_tensor(&self) -> String {
+        String::new() // I will change it to something other than a string later
     }
 }
 
@@ -952,5 +1064,167 @@ mod tests {
         }
         tak.make_move(Move::from_ptn("b3>"));
         assert_eq!(tak.result, GameResult::Draw);
+    }
+
+    #[test]
+    fn test_getting_legal_moves() {
+        let mut tak = Tak::new();
+        let mut i: u32 = 0;
+        loop {
+            let moves = tak.get_all_legal_moves();
+            let num_moves = moves.len();
+            assert!(num_moves > 0);
+            for move_ in &moves {
+                tak.make_move(*move_);
+                tak.check_invariants();
+                tak.unmake_move();
+                tak.check_invariants();
+            }
+            let selected_move = moves[i as usize % num_moves];
+            println!("move {}: {}", i, selected_move.to_ptn());
+            tak.make_move(selected_move);
+            i += 1;
+            if tak.result != GameResult::Ongoing {
+                break;
+            }
+        }
+        let mut tak = Tak::new();
+        let move_sequence = [
+            "b6", "e6",
+            "Cc1", "e4",
+            "c5", "Ce1",
+            "d6", "a1",
+            "Sd5", "d2",
+            "f1", "f6",
+            "d4", "a6",
+            "d4>", "Sc3",
+            "f4", "e1>",
+            "b2", "Sc2",
+            "e6>", "a3",
+            "d1", "Se2",
+            "b4", "Sb1",
+            "d1+", "d3",
+            "c1+", "a4",
+            "e5", "c1",
+            "f2", "a2",
+            "a5", "Sd1",
+            "Se3", "d3-",
+            "d4", "d3",
+            "b2<", "f3",
+            "a5-", "f3+",
+            "2a2-", "3d2+12",
+            "b3", "a3>",
+            "f3", "a5",
+            "2c2-", "b2",
+            "2a4+11", "2a5>11",
+            "c6", "e2>",
+            "d5-", "f5",
+            "Sa5", "2f4-",
+            "3d4-12", "b6<",
+            "Sa3", "3a6>111",
+            "c4", "a4",
+            "c6-", "f5<",
+            "2c5<", "a4>",
+            "Se6", "2d6<",
+            "c4<", "a6",
+            "3b4-12", "e1",
+            "3b5+", "3c6-",
+            "3b3+12", "4c5<",
+            "Sa2", "6b5-51",
+            "a4", "b3+",
+            "Sf4", "c3>",
+            "2e4+", "4d3+13",
+            "Sc2", "Sc3",
+            "e2", "5b4<",
+            "Sd6", "3d5>12",
+            "2b6<", "2f5+",
+            "f4-", "2b6-",
+            "a3+", "4f6-13",
+            "5a4>1112", "a3",
+            "b3", "2b5-11",
+        ];
+        for ptn in &move_sequence {
+            let legal_moves = tak.get_all_legal_moves();
+            assert!(legal_moves.contains(&Move::from_ptn(ptn)));
+            tak.make_move(Move::from_ptn(ptn));
+        }
+        let move_sequence = [
+            "b6", "e6",
+            "Cc1", "e4",
+            "c5", "Ce1",
+            "d6", "a1",
+            "Sd5", "d2",
+            "f1", "f6",
+            "d4", "a6",
+            "d4>", "Sc3",
+            "f4", "e1>",
+            "b2", "Sc2",
+            "e6>", "a3",
+            "d1", "Se2",
+            "b4", "Sb1",
+            "d1+", "d3",
+            "c1+*", "a4",
+            "e5", "c1",
+            "f2", "a2",
+            "a5", "Sd1",
+            "Se3", "d3-",
+            "d4", "d3",
+            "b2<", "f3",
+            "a5-", "f3+",
+            "2a2-", "3d2+12",
+            "b3", "a3>",
+            "f3", "a5",
+            "2c2-", "b2",
+            "2a4+11", "2a5>11",
+            "c6", "e2>",
+            "d5-", "f5",
+            "Sa5", "2f4-",
+            "3d4-12", "b6<",
+            "Sa3", "3a6>111",
+            "c4", "a4",
+            "c6-", "f5<",
+            "2c5<", "a4>",
+            "Se6", "2d6<",
+            "c4<", "a6",
+            "3b4-12", "e1",
+            "3b5+", "3c6-",
+            "3b3+12", "4c5<",
+            "Sa2", "6b5-51",
+            "a4", "b3+",
+            "Sf4", "c3>",
+            "2e4+", "4d3+13",
+            "Sc2", "Sc3",
+            "e2", "5b4<",
+            "Sd6", "3d5>12",
+            "2b6<", "2f5+",
+            "f4-", "2b6-",
+            "a3+", "4f6-13",
+            "5a4>1112", "a3",
+            "b3",
+        ];
+        let legal_moves = [
+            "1b1+1", "1b1<1", "1d1>1", "1e1+1", "1f1+1", "1f1<1", "2f1<11", "2f1<2", "1f2<1",
+            "2f2<2", "1a3+1", "1a3>1", "1c3+1", "1c3<1", "1c3>1", "d3", "Sd3", "1f4+1", "2f4+11",
+            "3f4+12", "2f4+2", "3f4+21", "3f4+3", "1b5-1", "2b5-11", "2b5-2", "1b5+1", "2b5+2",
+            "1b5>1", "2b5>11", "2b5>2", "c5", "Sc5", "d5", "Sd5", "1e5<1", "2e5<11", "3e5<111",
+            "4e5<112", "5e5<113", "3e5<12", "4e5<121", "5e5<122", "4e5<13", "5e5<131", "5e5<14",
+            "2e5<2", "3e5<21", "4e5<211", "5e5<212", "4e5<22", "5e5<221", "5e5<23", "3e5<3", "4e5<31",
+            "5e5<311", "5e5<32", "4e5<4", "5e5<41", "5e5<5", "1e5>1", "2e5>2", "3e5>3", "4e5>4", "5e5>5",
+            "1f5+1", "1f5<1", "b6", "Sb6", "c6", "Sc6", "f6", "Sf6"
+        ];
+        let legal_moves = legal_moves.iter().map(|s| Move::from_ptn(s)).collect::<Vec<_>>();
+        let mut tak = Tak::new();
+        for move_ in move_sequence {
+            let legal_moves_now = tak.get_all_legal_moves();
+            assert!(legal_moves_now.contains(&Move::from_ptn(move_)));
+            tak.make_move(Move::from_ptn(move_))
+        }
+        let predicted_legal_moves = tak.get_all_legal_moves();
+        for move_ in &legal_moves {
+            assert!(predicted_legal_moves.contains(move_));
+        }
+        for move_ in &predicted_legal_moves {
+            assert!(legal_moves.contains(move_))
+        }
     }
 }

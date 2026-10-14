@@ -3,4 +3,5 @@ mod game;
 
 fn main() {
     println!("Hello, world!");
+    println!("{}", 1)
 }
