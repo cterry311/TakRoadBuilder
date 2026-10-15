@@ -2,6 +2,7 @@
 
 use std::cmp::Ordering;
 use once_cell::sync::Lazy;
+use crate::game::GameResult::WhiteWin;
 
 pub const N: usize = 6;
 pub const STRIDE: usize = 8;
@@ -676,9 +677,9 @@ impl Tak {
     }
 
 
-    pub fn get_all_legal_moves(&self) -> Vec<Move> {
-        assert_eq!(self.result, GameResult::Ongoing);
-        let mut moves = Vec::new();
+    pub fn get_all_legal_moves(&self, output: &mut Vec<Move>) {
+        debug_assert_eq!(self.result, GameResult::Ongoing);
+        output.clear();
         let side = self.side_to_move();
         let stones_remain = self.stones_left[side.idx()] > 0;
         let caps_remain = self.caps_left[side.idx()] > 0;
@@ -688,11 +689,11 @@ impl Tak {
                 let stack: Stack = self.stacks[square];
                 if stack.height == 0 { // the space is empty
                     if stones_remain {
-                        moves.push(Move::place(square, Kind::Flat));
-                        moves.push(Move::place(square, Kind::Wall));
+                        output.push(Move::place(square, Kind::Flat));
+                        output.push(Move::place(square, Kind::Wall));
                     }
                     if caps_remain {
-                        moves.push(Move::place(square, Kind::Cap));
+                        output.push(Move::place(square, Kind::Cap));
                     }
                 } else {
                     if stack.top_color() == side && !self.in_opening() {
@@ -708,34 +709,82 @@ impl Tak {
                         let right_masks = &DROP_MASKS[get_mask_index(&move_capacity, &(right_dist as u8), &(soft_right & has_cap_top))];
 
                         for mask in up_masks {
-                            moves.push(Move::slide(square, 0, *mask));
+                            output.push(Move::slide(square, 0, *mask));
                         }
                         for mask in down_masks {
-                            moves.push(Move::slide(square, 1, *mask));
+                            output.push(Move::slide(square, 1, *mask));
                         }
                         for mask in left_masks {
-                            moves.push(Move::slide(square, 2, *mask));
+                            output.push(Move::slide(square, 2, *mask));
                         }
                         for mask in right_masks {
-                            moves.push(Move::slide(square, 3, *mask));
+                            output.push(Move::slide(square, 3, *mask));
                         }
                     }
                 }
             }
         }
-        moves
     }
 
-    pub fn get_filtered_moves(&self, depth: u8, do_pruning: bool) -> (Vec<Move>, GameResult) {
-        (Vec::new(), GameResult::Ongoing)
+    pub fn get_filtered_moves(&mut self, depth: u8, do_pruning: bool) -> (Vec<Move>, i8) {
+        debug_assert_eq!(self.result, GameResult::Ongoing);
+        let mut best_moves: Vec<Move> = Vec::new();
+        let mut best_score: i8 = -1;
+        let mut allocated_memory: Vec<Vec<Move>> = Vec::new();
+        for _ in 0..=depth {
+            allocated_memory.push(Vec::new());
+        }
+        self.get_all_legal_moves(&mut allocated_memory[0]);
+        let (layer0, remaining_layers) = allocated_memory.split_at_mut(1);
+        let me = self.side_to_move();
+        for mv in &layer0[0] {
+            self.make_move(*mv);
+            let score: i8 = match self.result {
+                GameResult::Ongoing if depth == 0 => 0,
+                GameResult::Ongoing => -self.filter_recursive(depth - 1, do_pruning, remaining_layers),
+                GameResult::WhiteWin => if me == Color::White { 1 } else { -1 },
+                GameResult::BlackWin => if me == Color::Black { 1 } else { -1 } ,
+                GameResult::Draw => 0,
+            };
+            self.unmake_move();
+            if score == best_score {
+                best_moves.push(*mv);
+            } else if score > best_score {
+                best_score = score;
+                best_moves.clear();
+                best_moves.push(*mv);
+            }
+            if do_pruning && best_score == 1 {
+                break;
+            }
+        }
+        (best_moves, best_score)
     }
 
-    fn filter_base(&self, do_pruning: bool) -> (Vec<Move>, GameResult) {
-        (Vec::new(), GameResult::Ongoing)
-    }
 
-    fn filter_recursive(&self, depth: u8, do_pruning: bool) -> (Vec<Move>, GameResult) {
-        (Vec::new(), GameResult::Ongoing)
+    fn filter_recursive(&mut self, depth: u8, do_pruning: bool, allocated_memory: &mut [Vec<Move>]) -> i8 {
+        self.get_all_legal_moves(&mut allocated_memory[0]);
+        let mut score: i8 = -1;
+        let (layer0, remaining_layers) = allocated_memory.split_at_mut(1);
+        let me = self.side_to_move();
+        for mv in &layer0[0] {
+            self.make_move(*mv);
+            let found_score = match self.result {
+                GameResult::Ongoing if depth == 0 => 0,
+                GameResult::Ongoing => -self.filter_recursive(depth - 1, do_pruning, remaining_layers),
+                GameResult::WhiteWin => if me == Color::White { 1 } else { -1 } ,
+                GameResult::BlackWin => if me == Color::Black { 1 } else { -1 },
+                GameResult::Draw => 0,
+            };
+            self.unmake_move();
+            if found_score > score {
+                score = found_score;
+            }
+            if found_score == 1 {
+                break;
+            }
+        }
+        score
     }
 
     pub fn from_tps(tps: &str) -> Tak {
@@ -1070,17 +1119,18 @@ mod tests {
     fn test_getting_legal_moves() {
         let mut tak = Tak::new();
         let mut i: u32 = 0;
+        let mut legal_moves: Vec<Move> = Vec::new();
         loop {
-            let moves = tak.get_all_legal_moves();
-            let num_moves = moves.len();
+            tak.get_all_legal_moves(&mut legal_moves);
+            let num_moves = legal_moves.len();
             assert!(num_moves > 0);
-            for move_ in &moves {
+            for move_ in &legal_moves {
                 tak.make_move(*move_);
                 tak.check_invariants();
                 tak.unmake_move();
                 tak.check_invariants();
             }
-            let selected_move = moves[i as usize % num_moves];
+            let selected_move = legal_moves[i as usize % num_moves];
             println!("move {}: {}", i, selected_move.to_ptn());
             tak.make_move(selected_move);
             i += 1;
@@ -1144,7 +1194,7 @@ mod tests {
             "b3", "2b5-11",
         ];
         for ptn in &move_sequence {
-            let legal_moves = tak.get_all_legal_moves();
+            tak.get_all_legal_moves(&mut legal_moves);
             assert!(legal_moves.contains(&Move::from_ptn(ptn)));
             tak.make_move(Move::from_ptn(ptn));
         }
@@ -1202,7 +1252,7 @@ mod tests {
             "5a4>1112", "a3",
             "b3",
         ];
-        let legal_moves = [
+        let legal_moves_known = [
             "1b1+1", "1b1<1", "1d1>1", "1e1+1", "1f1+1", "1f1<1", "2f1<11", "2f1<2", "1f2<1",
             "2f2<2", "1a3+1", "1a3>1", "1c3+1", "1c3<1", "1c3>1", "d3", "Sd3", "1f4+1", "2f4+11",
             "3f4+12", "2f4+2", "3f4+21", "3f4+3", "1b5-1", "2b5-11", "2b5-2", "1b5+1", "2b5+2",
@@ -1212,19 +1262,133 @@ mod tests {
             "5e5<311", "5e5<32", "4e5<4", "5e5<41", "5e5<5", "1e5>1", "2e5>2", "3e5>3", "4e5>4", "5e5>5",
             "1f5+1", "1f5<1", "b6", "Sb6", "c6", "Sc6", "f6", "Sf6"
         ];
-        let legal_moves = legal_moves.iter().map(|s| Move::from_ptn(s)).collect::<Vec<_>>();
+        let legal_moves_known = legal_moves_known.iter().map(|s| Move::from_ptn(s)).collect::<Vec<_>>();
         let mut tak = Tak::new();
         for move_ in move_sequence {
-            let legal_moves_now = tak.get_all_legal_moves();
-            assert!(legal_moves_now.contains(&Move::from_ptn(move_)));
+            tak.get_all_legal_moves(&mut legal_moves);
+            assert!(legal_moves.contains(&Move::from_ptn(move_)));
             tak.make_move(Move::from_ptn(move_))
         }
-        let predicted_legal_moves = tak.get_all_legal_moves();
-        for move_ in &legal_moves {
+        tak.get_all_legal_moves(&mut legal_moves);
+        let predicted_legal_moves = legal_moves;
+        for move_ in &legal_moves_known {
             assert!(predicted_legal_moves.contains(move_));
         }
         for move_ in &predicted_legal_moves {
-            assert!(legal_moves.contains(move_))
+            assert!(legal_moves_known.contains(move_))
+        }
+    }
+
+    #[test]
+    fn test_move_filtering() {
+        let mut tak = Tak::new();
+        let move_sequence = [ // looking forward 0 moves ahead, correctly identifies winning moves
+            "f6", "a1",
+            "e6", "f5",
+            "d6", "f4",
+            "c6", "f3",
+            "c5", "f2",
+            "c4",
+        ].iter().map(|s| Move::from_ptn(s)).collect::<Vec<_>>();
+
+        let expected_moves = [
+            "f1", "Cf1"
+        ].iter().map(|s| Move::from_ptn(s)).collect::<Vec<_>>();
+
+        for move_ in move_sequence {
+            tak.make_move(move_);
+        }
+        let (filtered_moves, score) = tak.get_filtered_moves(0, false);
+        assert_eq!(score, 1);
+        for move_ in &filtered_moves {
+            assert!(expected_moves.contains(move_));
+        }
+        for move_ in &expected_moves {
+            assert!(filtered_moves.contains(move_));
+        }
+
+
+        let mut tak = Tak::new(); // test looking 1 move ahead, correctly blocks road
+        let move_sequence = [
+            "f6", "a1",
+            "e6", "f5",
+            "d6", "f4",
+            "c6", "f3",
+            "c5", "f2",
+            "c4", "e2",
+        ].iter().map(|s| Move::from_ptn(s)).collect::<Vec<_>>();
+        let expected_moves = [
+            "e6>"
+        ].iter().map(|s| Move::from_ptn(s)).collect::<Vec<_>>();
+        for move_ in move_sequence {
+            tak.make_move(move_);
+        }
+        let (filtered_moves, score) = tak.get_filtered_moves(1, false);
+        assert_eq!(score, 0);
+        for move_ in &filtered_moves {
+            assert!(expected_moves.contains(move_));
+        }
+        for move_ in &expected_moves {
+            assert!(filtered_moves.contains(move_));
+        }
+
+
+        let mut tak = Tak::new(); // test looking 2 moves ahead, setting up tenuie
+        let move_sequence = [
+            "a1", "f6",
+            "f5", "b1",
+            "f4", "a2",
+            "f3", "b2",
+            "e2", "a3",
+        ].iter().map(|s| Move::from_ptn(s)).collect::<Vec<_>>();
+        let expected_moves = [
+            "f2", "Cf2", "e1", "Ce1"
+        ].iter().map(|s| Move::from_ptn(s)).collect::<Vec<_>>();
+
+        for move_ in move_sequence {
+            tak.make_move(move_);
+        }
+        let (filtered_moves, score) = tak.get_filtered_moves(2, false);
+        assert_eq!(score, 1);
+        for move_ in &filtered_moves {
+            assert!(expected_moves.contains(move_));
+        }
+        for move_ in &expected_moves {
+            assert!(filtered_moves.contains(move_));
+        }
+
+        let mut tak = Tak::new(); // test complex position 3 moves ahead
+
+        let move_sequence = [
+            "f6", "a1",
+            "d3", "Cd4",
+            "c3", "e3",
+            "Cc4", "e2",
+            "e1", "d1",
+            "c5", "c6",
+            "b6", "b5",
+            "c1", "e4",
+            "d5", "d6",
+            "c1>", "Sd2",
+            "b6>", "e6",
+            "c1", "d6<",
+            "c2", "d6",
+            "b6", "b5+",
+            "c5+", "2b6>",
+        ].iter().map(|s| Move::from_ptn(s)).collect::<Vec<_>>();
+
+        let expected_moves = ["1d5+1", "Sa6", "Sb6"].iter().map(|s| Move::from_ptn(s)).collect::<Vec<_>>();
+
+        for move_ in move_sequence {
+            tak.make_move(move_);
+        }
+        let (filtered_moves, score) = tak.get_filtered_moves(3, false);
+        assert_eq!(score, 0);
+        for move_ in &filtered_moves {
+            assert!(expected_moves.contains(move_));
+        }
+        for move_ in &expected_moves {
+            assert!(filtered_moves.contains(move_));
         }
     }
 }
