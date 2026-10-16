@@ -3,6 +3,10 @@ name = "rust_game"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "tak_engine"
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 once_cell = "1.21.4"
 rand = "0.10.3"

@@ -1,7 +1,7 @@
 import sqlite3
 
 
-from game_emulator.game import Tak
+from python_game.game import Tak
 from random import choice
 
 conn = sqlite3.connect("games.db")
@@ -248,9 +248,24 @@ def parse_server_notation(notation : str, result):
 # conn.commit()
 
 
-cursor.execute('''
-    SELECT COUNT(*) FROM training_positions WHERE edited_position = 1
-''')
-print(cursor.fetchone())
+# cursor.execute('''
+#     SELECT COUNT(*) FROM training_positions WHERE edited_position = 1
+# ''')
+# print(cursor.fetchone())
+# cursor.close()
+#print(0.1+0.2)
+
+import tak_engine
+
+tak = tak_engine.Tak()
+another_tak = tak_engine.Tak.from_tps("x6/x6/x6/x6/x6/x6 1 1")
+while True:
+    filtered_moves, score = tak.filtered_moves(3, False)
+    tak.make_move(choice(filtered_moves))
+    print(score)
+    if tak.result() != 0:
+        break
+
+
 cursor.close()
 conn.close()

@@ -2,6 +2,9 @@
 requires = ["maturin>=1.5,<2"]
 build-backend = "maturin"
 
+[tool.maturin]
+bindings = "pyo3"
+
 [project]
 version = "1.0.0"
 name = "tak_engine"

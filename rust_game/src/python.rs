@@ -45,6 +45,7 @@ impl PyTak {
         buf.iter().map(|m| m.to_ptn()).collect()
     }
 
+    /// gets filtered moves
     fn filtered_moves(&mut self, depth: u8, do_pruning: bool) -> (Vec<String>, i8) {
         let (moves, score) = self.inner.get_filtered_moves(depth, do_pruning);
         (moves.iter().map(|m| m.to_ptn()).collect(), score)

@@ -43,18 +43,20 @@ moves = [
 '4c3-13',
 ]
 
-tak = game.Tak(6)
 
-for move in moves:
-    print(move)
-    legal_moves = tak.get_all_legal_moves()
-    if move in legal_moves:
-        pass
-    else:
-        raise Exception('Invalid move')
-    print(len(legal_moves))
-    tak.make_move(move)
-print(tak.turn)
+
+# tak = game.Tak(6)
+#
+# for move in moves:
+#     print(move)
+#     legal_moves = tak.get_all_legal_moves()
+#     if move in legal_moves:
+#         pass
+#     else:
+#         raise Exception('Invalid move')
+#     print(len(legal_moves))
+#     tak.make_move(move)
+# print(tak.turn)
 
 # tak = game.Tak(6)
 #
@@ -162,37 +164,62 @@ print(tak.turn)
 #             print(tak.turn)
 #             break
 
+#
+# tak = game.Tak(6)
+# print('\n')
+# sucessesful = 0
+# while tak.turn not in [4, 5, 6]:
+#     possible_moves = tak.get_all_legal_moves()
+#     rand_move = choice(possible_moves)
+#     tak.make_move(rand_move)
+#     tps_string = tak.to_tps()
+#     tak_copy = game.Tak.from_tps(tps_string)
+#     if tak == tak_copy:
+#         sucessesful += 1
+#     else:
+#         print('sucesses')
+#         print(sucessesful)
+#         print('board')
+#         print(tak.board == tak_copy.board)
+#         print('turn')
+#         print(tak.turn == tak_copy.turn)
+#         print(tak.turn)
+#         print(tak_copy.turn)
+#         print('stones')
+#         print(tak.white_stones == tak_copy.white_stones)
+#         print(tak.black_stones == tak_copy.black_stones)
+#         print('capstones')
+#         print(tak.white_capstones == tak_copy.white_capstones)
+#         print(tak.black_capstones == tak_copy.black_capstones)
+#         raise Exception('tps conversion failed')
+#
+#
+# print(tak.turn)
+
+# tak = game.Tak.from_tps('x2,212112,2,2,2/x3,1,x2/x2,1C,2C,2,x/x2,1,1,2,x/x2,1,2S,2,x/1,x,1,21,1,x 1 16')
+# print(str(tak.get_all_legal_moves(filtering=3, do_pruning=False, include_result=True)))
+# print(str(tak.get_all_legal_moves(filtering=2, do_pruning=False, include_result=True)))
 
 tak = game.Tak(6)
-print('\n')
-sucessesful = 0
-while tak.turn not in [4, 5, 6]:
-    possible_moves = tak.get_all_legal_moves()
-    rand_move = choice(possible_moves)
-    tak.make_move(rand_move)
-    tps_string = tak.to_tps()
-    tak_copy = game.Tak.from_tps(tps_string)
-    if tak == tak_copy:
-        sucessesful += 1
-    else:
-        print('sucesses')
-        print(sucessesful)
-        print('board')
-        print(tak.board == tak_copy.board)
-        print('turn')
-        print(tak.turn == tak_copy.turn)
+
+import time
+from random import choice
+
+times = []
+
+while True:
+    start = time.perf_counter()
+    filterd_moves = tak.get_all_legal_moves(filtering=2)
+    end = time.perf_counter()
+    elapsed = end - start
+    print(elapsed)
+    times.append(elapsed)
+    tak.make_move(choice(filterd_moves))
+    if tak.turn in [4, 5, 6]:
+        print('Game over')
         print(tak.turn)
-        print(tak_copy.turn)
-        print('stones')
-        print(tak.white_stones == tak_copy.white_stones)
-        print(tak.black_stones == tak_copy.black_stones)
-        print('capstones')
-        print(tak.white_capstones == tak_copy.white_capstones)
-        print(tak.black_capstones == tak_copy.black_capstones)
-        raise Exception('tps conversion failed')
+        break
 
-
-print(tak.turn)
-
-
+print('average time')
+print(sum(times) / len(times))
 

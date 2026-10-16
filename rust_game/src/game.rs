@@ -689,9 +689,11 @@ impl Tak {
                 if stack.height == 0 { // the space is empty
                     if stones_remain {
                         output.push(Move::place(square, Kind::Flat));
-                        output.push(Move::place(square, Kind::Wall));
+                        if !self.in_opening() {
+                            output.push(Move::place(square, Kind::Wall));
+                        }
                     }
-                    if caps_remain {
+                    if caps_remain && !self.in_opening() {
                         output.push(Move::place(square, Kind::Cap));
                     }
                 } else {

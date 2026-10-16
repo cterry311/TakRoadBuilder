@@ -1,0 +1,4 @@
+pip install maturin
+cd .\rust_game\
+$env:RUSTFLAGS="-C target-cpu=native"
+maturin develop --release

@@ -1,3 +1,4 @@
 /.venv
 /games_anon.db.gz
 /games.db
+/rust_game/target

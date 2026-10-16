@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/tak.iml" filepath="$PROJECT_DIR$/.idea/tak.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/tak_engine.iml" filepath="$PROJECT_DIR$/.idea/tak_engine.iml" />
     </modules>
   </component>
 </project>
