@@ -2,7 +2,6 @@
 
 use std::cmp::Ordering;
 use once_cell::sync::Lazy;
-use crate::game::GameResult::WhiteWin;
 
 pub const N: usize = 6;
 pub const STRIDE: usize = 8;
@@ -226,7 +225,7 @@ impl Move {
             let sq = rank * 8 + file;
             return Move::place(sq, kind);
         }
-        let mut carry = match ptn_move.as_bytes()[0] {
+        let carry = match ptn_move.as_bytes()[0] {
             b'2' => 2,
             b'3' => 3,
             b'4' => 4,
@@ -254,7 +253,7 @@ impl Move {
         let mut running_sum: u8 = 0;
         for amount in sequence {
             running_sum += amount;
-            move_mask |= (1u8 << (running_sum - 1));
+            move_mask |= 1u8 << (running_sum - 1);
         }
         let file = (ptn_move.as_bytes()[1] - b'a') as usize;
         let rank = (ptn_move.as_bytes()[2] - b'1') as usize;
@@ -787,12 +786,129 @@ impl Tak {
         score
     }
 
-    pub fn from_tps(tps: &str) -> Tak {
-        Tak::new()
+    pub fn from_tps(tps: &str) -> Result<Tak, String> {
+        let parts: Vec<&str> = tps.split_whitespace().collect();
+        if parts.len() != 3 {
+            return Err(format!("TPS needs 3 fields: {tps:?}"));
+        }
+        let rows: Vec<&str> = parts[0].split('/').collect();
+        if rows.len() != N {
+            return Err(format!("TPS must have {N} rows: {tps:?}"));
+        }
+        let player: u16 = match parts[1] {
+            "1" => 0,
+            "2" => 1,
+            other => return Err(format!("bad TPS player field {other:?}")),
+        };
+        let move_number: u16 = parts[2]
+            .parse()
+            .map_err(|_| format!("bad TPS move number {:?}", parts[2]))?;
+        if move_number == 0 {
+            return Err("TPS move number starts at 1".to_string());
+        }
+
+        let mut tak = Tak::new();
+
+        for (i, row) in rows.iter().enumerate() {
+            let y = N - 1 - i; // first TPS row is the top rank
+            let mut x = 0usize;
+            for token in row.split(',') {
+                let bytes = token.as_bytes();
+                if bytes.is_empty() || x >= N {
+                    return Err(format!("bad TPS row {row:?}"));
+                }
+                if bytes[0] == b'x' {
+                    let run = if bytes.len() == 1 {
+                        1
+                    } else {
+                        token[1..].parse::<usize>().map_err(|_| format!("bad TPS token {token:?}"))?
+                    };
+                    if run == 0 {
+                        return Err(format!("bad TPS token {token:?}"));
+                    }
+                    x += run;
+                    continue;
+                }
+
+                let sq = y * STRIDE + x;
+                let mut j = 0;
+                while j < bytes.len() {
+                    let color = match bytes[j] {
+                        b'1' => Color::White,
+                        b'2' => Color::Black,
+                        _ => return Err(format!("bad TPS stack {token:?}")),
+                    };
+                    j += 1;
+                    let kind = match bytes.get(j).copied() {
+                        Some(b'S') => { j += 1; Kind::Wall }
+                        Some(b'C') => { j += 1; Kind::Cap }
+                        _ => Kind::Flat,
+                    };
+                    // only the top piece of a stack may be a wall or capstone
+                    if kind != Kind::Flat && j != bytes.len() {
+                        return Err(format!("wall/cap must be on top: {token:?}"));
+                    }
+                    tak.stacks[sq].push(color, kind);
+                    let reserve = if kind == Kind::Cap {
+                        &mut tak.caps_left[color.idx()]
+                    } else {
+                        &mut tak.stones_left[color.idx()]
+                    };
+                    *reserve = reserve
+                        .checked_sub(1)
+                        .ok_or_else(|| format!("too many pieces of one color: {tps:?}"))?;
+                }
+                x += 1;
+            }
+            if x != N {
+                return Err(format!("TPS row {row:?} does not cover {N} squares"));
+            }
+        }
+
+        for y in 0..N {
+            for x in 0..N {
+                tak.refresh_square(y * STRIDE + x);
+            }
+        }
+        tak.ply = (move_number - 1) * 2 + player;
+        tak.result = GameResult::Ongoing;
+        debug_assert!({ tak.check_invariants(); true });
+        Ok(tak)
     }
 
     pub fn to_tps(&self) -> String {
-        String::new()
+        let mut rows: Vec<String> = Vec::with_capacity(N);
+        for y in (0..N).rev() {
+            let mut tokens: Vec<String> = Vec::new();
+            let mut empty_run = 0usize;
+            for x in 0..N {
+                let stack = self.stacks[y * STRIDE + x];
+                if stack.height == 0 {
+                    empty_run += 1;
+                    continue;
+                }
+                if empty_run > 0 {
+                    tokens.push(if empty_run == 1 { "x".to_string() } else { format!("x{empty_run}") });
+                    empty_run = 0;
+                }
+                let mut token = String::new();
+                for i in (0..stack.height).rev() { // bottom piece is the highest bit
+                    token.push(if (stack.bits >> i) & 1 == 0 { '1' } else { '2' });
+                }
+                match stack.kind {
+                    Kind::Flat => {}
+                    Kind::Wall => token.push('S'),
+                    Kind::Cap => token.push('C'),
+                }
+                tokens.push(token);
+            }
+            if empty_run > 0 {
+                tokens.push(if empty_run == 1 { "x".to_string() } else { format!("x{empty_run}") });
+            }
+            rows.push(tokens.join(","));
+        }
+        let player = if self.side_to_move() == Color::White { 1 } else { 2 };
+        format!("{} {} {}", rows.join("/"), player, self.move_number())
     }
 
     /// convert the board state to a tensor that can be used for machine learning, tensor output is as follows,
@@ -828,7 +944,7 @@ mod tests {
         assert_eq!(stack.height, 2);
         assert_eq!(stack.top_color(), Color::Black);
 
-        let mut top_stone = stack.lift(1);
+        let top_stone = stack.lift(1);
         assert_eq!(top_stone.top_color(), Color::Black);
         assert_eq!(top_stone.height, 1);
 
@@ -906,7 +1022,7 @@ mod tests {
 
     #[test]
     fn tak_methods_dont_crash() {
-        let mut tak = Tak::new();
+        let tak = Tak::new();
         assert_eq!(tak.move_number(), 1);
     }
 
@@ -1390,5 +1506,105 @@ mod tests {
         for move_ in &expected_moves {
             assert!(filtered_moves.contains(move_));
         }
+    }
+
+    #[test]
+    fn test_tps_import() {
+        let tps = "x5,1/x5,1/x5,1/2,x4,1/2,2,x3,1/2,2,x4 1 6";
+        let mut tak = Tak::from_tps(tps).unwrap();
+        tak.make_move(Move::from_ptn("f1"));
+        assert_eq!(tak.result, GameResult::WhiteWin);
+
+        let tps = "221,x2,1S,1S,x/1S,x3,12212,2/11,1212,1,121,21S,112S/2,12,2S,x,1S,1121S/1S,221,1S,21S,1,12S/221,2S,221C,2S,2,12C 1 53";
+        let mut tak = Tak::from_tps(tps).unwrap();
+        tak.make_move(Move::from_ptn("d3"));
+        assert_eq!(tak.result, GameResult::WhiteWin);
+
+        let tps = "x,1,2,12S,2,2/x,2S,21,2,122C,2/2S,x,111C,1,1,1/x2,121,2,21S,2/x,1,x,2,x2/2S,1,x4 1 23";
+        let mut tak = Tak::from_tps(tps).unwrap();
+        tak.make_move(Move::from_ptn("2c4<11"));
+        assert_eq!(tak.result, GameResult::WhiteWin);
+
+        let tps = "x,1,2,12S,2,2/12S,112S,2S,22,122C,2/1,1S,111C,12,1,1/2,1,121,2,21S,12/1,1,1,221S,2,1S/2S,1,2,1,1,2 2 38";
+        let mut tak = Tak::from_tps(tps).unwrap();
+        tak.make_move(Move::from_ptn("a6"));
+        assert_eq!(tak.result, GameResult::BlackWin);
+    }
+
+    #[test]
+    fn test_tps_export() {
+        let move_sequence = [
+            "f6", "a1",
+            "d4", "d3",
+            "c4", "e5",
+            "Ce4", "e5<",
+            "e5", "Cc5",
+            "c3", "d3<",
+            "c4-", "c5>",
+            "e4<", "2d5>",
+            "e4", "d3",
+            "d5", "c5",
+            "c4", "Sb5",
+            "d6", "Se6",
+            "Se3", "e6<",
+            "e3+", "e6",
+            "f4", "f5",
+            "2d4<", "d2",
+            "d4", "e3",
+            "a1>", "Sa1",
+            "b2", "Sa4",
+            "b6",
+        ].iter().map(|s| Move::from_ptn(s)).collect::<Vec<_>>();
+        let mut tak = Tak::new();
+        for move_ in move_sequence {
+            tak.make_move(move_);
+        }
+        let actual_tps = tak.to_tps();
+        let expected_tps = "x,1,x,12S,2,2/x,2S,2,1,122C,2/2S,x,111C,1,11S,1/x2,121,2,2,x/x,1,x,2,x2/2S,1,x4 2 20";
+        assert_eq!(actual_tps, expected_tps);
+
+        let move_sequence = [
+            "f6", "a1",
+            "d3", "Cd4",
+            "c3", "e3",
+            "Cc4", "e2",
+            "e1", "d1",
+            "c5", "c6",
+            "b6", "b5",
+            "c1", "e4",
+            "d5", "d6",
+            "c1>", "Sd2",
+            "b6>", "e6",
+            "c1", "d6<",
+            "c2", "d6",
+            "b6", "b5+",
+            "c5+", "2b6>",
+        ].iter().map(|s| Move::from_ptn(s)).collect::<Vec<_>>();
+        let mut tak = Tak::new();
+        for move_ in move_sequence {
+            tak.make_move(move_);
+        }
+        let actual_tps = tak.to_tps();
+        let expected_tps = "x2,212112,2,2,2/x3,1,x2/x2,1C,2C,2,x/x2,1,1,2,x/x2,1,2S,2,x/1,x,1,21,1,x 1 16";
+        assert_eq!(actual_tps, expected_tps);
+    }
+
+    #[test]
+    fn test_tps_bidirectional_conversion() {
+        let original_tps = "x2,21,12S,2,2/12S,112S,2,2,1,2/x,1S,111C,2121,22C,1112/2,1,x3,1221S/1,1,12,x,2221S,1S/2S,1,x,1,1,2 2 40";
+        let through_tps = Tak::from_tps(original_tps).unwrap().to_tps();
+        assert_eq!(through_tps, original_tps);
+
+        let original_tps = "x,12212S,x3,1/2,2S,x,2112S,2,2S/x,221S,x3,22221C/x,21211112C,21S,x2,1/1212,x,1,1,1,1/x,1212,x,2S,1,1 1 49";
+        let through_tps = Tak::from_tps(original_tps).unwrap().to_tps();
+        assert_eq!(through_tps, original_tps);
+
+        let original_tps = "x,1121S,2,x3/x,22,x,1,x,2S/x,2,2,x2,22221C/x,21,2,x2,1/1112C,221,1S,1,1,1/2,1,2,2S,x,1 2 33";
+        let through_tps = Tak::from_tps(original_tps).unwrap().to_tps();
+        assert_eq!(through_tps, original_tps);
+
+        let original_tps = "x,2,x4/x,212S,2,1,x2/2,21C,21,1,1,1/2,x,2,x,1,1/2,1,22,1212C,121S,2/212S,x,1,1,x,1 1 30";
+        let through_tps = Tak::from_tps(original_tps).unwrap().to_tps();
+        assert_eq!(through_tps, original_tps);
     }
 }

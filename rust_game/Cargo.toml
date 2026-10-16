@@ -5,3 +5,12 @@ edition = "2024"
 
 [dependencies]
 once_cell = "1.21.4"
+rand = "0.10.3"
+pyo3 = "0.30.1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"          # link-time optimization across the whole crate and dependencies
+codegen-units = 1    # slower compile, better inlining and optimization
+# panic = "abort"      # smaller and slightly faster; panics kill the process instead of unwinding
+debug = false

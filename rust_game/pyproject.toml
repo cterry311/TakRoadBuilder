@@ -1,0 +1,8 @@
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+version = "1.0.0"
+name = "tak_engine"
+requires-python = ">=3.9"
