@@ -1,3 +1,5 @@
+from numpy import ndarray
+
 class Tak:
     """A Tak game on a 6x6 board.
 
@@ -50,3 +52,23 @@ class Tak:
 
     def clone(self) -> "Tak":
         """Return an independent copy of the game."""
+
+    def encode_into(self, out: ndarray):
+        """encode the current board into the provided array, expected shape (25, 6, 6) or (900,)"""
+
+    def to_tensor(self) -> ndarray:
+        """returns a numpy array of shape (25, 6, 6) encoding game state"""
+
+    def legal_moves_raw(self) -> list[int]:
+        """gets all legal moves as 16 bit integers"""
+
+    def filtered_moves_raw(self, depth: int, do_pruning: bool) -> tuple[list[int], int]:
+        """gets filtered moves at given depth as 16 bit integers"""
+
+    @staticmethod
+    def ptn_to_raw(ptn: str) -> int:
+        """accepts a move string in ptn format, returns a 16 bit integer"""
+
+    @staticmethod
+    def raw_to_ptn(mv: int) -> str:
+        """accepts a move as a 16 bit integer and returns a ptn formated move string"""

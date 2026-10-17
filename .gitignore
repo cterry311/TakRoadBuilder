@@ -2,3 +2,5 @@
 /games_anon.db.gz
 /games.db
 /rust_game/target
+/games_saved.db
+/.idea

@@ -2,7 +2,7 @@ import sqlite3
 import re
 from random import choice
 
-from game_emulator.game import Tak
+from tak_engine import Tak as RustTak
 
 def parse_server_notation(notation : str, result):
     split_moves = notation.split(',')
@@ -117,13 +117,15 @@ cursor.execute('''
     WHERE timertime > 600 AND timerinc > 10
 ''')
 
+
 cursor.execute('''
     CREATE TABLE games_formated (
     id INTEGER PRIMARY KEY,
     player_white VARCHAR(20),
     player_black VARCHAR(20),
     notation TEXT,
-    game_length INT
+    game_length INT,
+    result VARCHAR(7)
 );
 ''')
 
@@ -132,8 +134,10 @@ cursor.execute('''
     CREATE TABLE training_positions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         game_id INTEGER,
+        game_result TINYINT,
         tps TEXT,
         move VARCHAR(9),
+        move_raw SMALLINT,
         move_number SMALLINT,
         edited_position BIT,
         cleaned_move BIT,
@@ -165,9 +169,9 @@ for game in all_games:
         print(f"result: {result}")
         raise e
     cursor.execute('''
-        INSERT INTO games_formated (id, player_white, player_black, notation, game_length)
-            VALUES (?, ?, ?, ?, ?)
-    ''', (game_id, player_white, player_black, ptn_notation, game_length))
+        INSERT INTO games_formated (id, player_white, player_black, notation, game_length, result)
+            VALUES (?, ?, ?, ?, ?, ?)
+    ''', (game_id, player_white, player_black, ptn_notation, game_length, result))
     i += 1
     if i % interval == 0:
         print('*', end='', flush=True)
@@ -177,7 +181,7 @@ print('\ngames formatted\n')
 
 print('cleaning games...')
 cursor.execute('''
-    SELECT id, player_white, player_black, notation, game_length FROM games_formated
+    SELECT id, player_white, player_black, notation, game_length, result FROM games_formated
 ''')
 games_formated = cursor.fetchall()
 print(('-' * 46) + 'progress' + ('-' * 46))
@@ -185,25 +189,35 @@ num_games = len(games_formated)
 interval = num_games // 100
 i = 0
 for game in games_formated:
-    game_id, player_white, player_black, notation, game_length = game
+    game_id, player_white, player_black, notation, game_length, result = game
     moves = get_moves_ordered(notation)
-    tak = Tak(6)
+    tak = RustTak()
     for move in moves:
         tak.make_move(move)
-    if tak.turn not in [4, 5, 6]:
+    if tak.result() == 0:
         cursor.execute('''
             DELETE FROM games_formated WHERE id = ?
         ''', (game_id,))
         conn.commit()
+    else:
+        expected = {'R-0': 1, 'F-0': 1, '0-R': 2, '0-F': 2, '1/2-1/2': 3}[result]
+        if tak.result() != expected:
+            print(f'game id: {game_id}')
+            print(f'result: {result}')
+            print(f'expected: {tak.result()}')
+            raise ValueError('RustGame did not behave as expected')
     i += 1
     if i % interval == 0:
         print('*', end='', flush=True)
         conn.commit()
+
+
 print('\ngames cleaned\n')
 
 print('creating training positions...')
 cursor.execute('''
-    SELECT id, player_white, player_black, notation, game_length FROM games_formated
+    SELECT id, player_white, player_black, notation, game_length, result
+    FROM games_formated
 ''')
 
 games_formated = cursor.fetchall()
@@ -212,18 +226,33 @@ num_games = len(games_formated)
 interval = num_games // 100
 i = 0
 for game in games_formated:
-    game_id, player_white, player_black, notation, game_length = game
+    game_id, player_white, player_black, notation, game_length, result = game
     moves = get_moves_ordered(notation)
-    tak = Tak(6)
+    tak = RustTak()
     move_number = 0
+    game_result = 0
+    if result == 'F-0':
+        game_result = 1
+    elif result == 'R-0':
+        game_result = 1
+    elif result == '0-F':
+        game_result = -1
+    elif result == '0-R':
+        game_result = -1
+    elif result == '1/2-1/2':
+        game_result = 0
+    else:
+        print(f"game id: {game_id}")
+        raise ValueError(f"game result did not match conditions {result}")
     for move in moves:
         move_number += 1
         tps = tak.to_tps()
         cursor.execute('''
-            INSERT INTO training_positions (game_id, tps, move, move_number, edited_position, cleaned_move)
-                VALUES (?, ?, ?, ?, 0, 0)
-        ''', (game_id, tps, move, move_number))
+            INSERT INTO training_positions (game_id, game_result, tps, move, move_raw, move_number, edited_position, cleaned_move)
+                VALUES (?, ?, ?, ?, ?, ?, 0, 0)
+        ''', (game_id, game_result, tps, move, RustTak.ptn_to_raw(move), move_number))
         tak.make_move(move)
+        game_result *= -1
     i += 1
     if i % interval == 0:
         print('*', end='', flush=True)
@@ -236,37 +265,39 @@ cursor.execute('''
     SELECT * FROM training_positions WHERE cleaned_move = 0
 ''')
 positions = cursor.fetchall()
-
-print(('-' * 46) + 'progress' + ('-' * 46))
 num_positions = len(positions)
+print(f"{num_positions} to filter, this may take a while...")
+print(('-' * 46) + 'progress' + ('-' * 46))
+
 interval = num_positions // 100
 i = 0
 for position in positions:
-    position_id, game_id, tps, move, move_number, edited_position, cleaned_move = position
+    position_id, game_id, game_result, tps, move, move_raw, move_number, edited_position, cleaned_move = position
     try:
-        tak = Tak.from_tps(tps)
-        filtered_moves, result = tak.get_all_legal_moves(filtering=1, do_pruning=False, include_result=True)
+        tak = RustTak.from_tps(tps)
+        filtered_moves, result = tak.filtered_moves_raw(1, False)
     except Exception as e:
         print(f'\nposition id: {position_id}')
         raise e
-    if move not in filtered_moves:
+    if move_raw not in filtered_moves:
         # the move made is not within the filtered moves
         if result == 1:
             # there is a winning move avaliable, so I will edit the position such that they make the winning move instead
             rand_winning_move = choice(filtered_moves)
+            rand_move_ptn = RustTak.raw_to_ptn(rand_winning_move)
             cursor.execute('''
                 UPDATE training_positions 
-                SET edited_position = 1, move = ?, cleaned_move = 1
+                SET edited_position = 1, move_raw = ?, move = ?, cleaned_move = 1, game_result = 1
                 WHERE id = ?
-            ''', (rand_winning_move, position_id))
+            ''', (rand_winning_move, rand_move_ptn, position_id))
         elif result == 0:
             # there is no winning move availible and they played a losing move when a neutral move was availible, drop the position
             cursor.execute('''
                 DELETE FROM training_positions WHERE id = ?
             ''', (position_id,))
         elif result == -1:
-            legal_moves = tak.get_all_legal_moves()
-            if move in legal_moves:
+            legal_moves = tak.legal_moves_raw()
+            if move_raw in legal_moves:
                 cursor.execute('''
                     DELETE FROM training_positions WHERE id = ?
                 ''', (position_id,))
@@ -287,6 +318,39 @@ for position in positions:
         conn.commit()
 conn.commit()
 print('\ntraining positions filtered\n')
+
+
+# cursor.execute('''
+#     CREATE TABLE training_positions (
+#         id INTEGER PRIMARY KEY AUTOINCREMENT,
+#         game_id INTEGER,
+#         tps TEXT,
+#         move VARCHAR(9),
+#         move_number SMALLINT,
+#         edited_position BIT,
+#         cleaned_move BIT,
+#         FOREIGN KEY (game_id) REFERENCES games_formated(id)
+#     )
+# ''')
+
+cursor.execute('''
+    SELECT COUNT(*) FROM training_positions
+''')
+
+remaining_positions = cursor.fetchall()[0][0]
+
+cursor.execute('''
+    SELECT COUNT(*)
+    FROM training_positions
+    WHERE edited_position = 1
+''')
+
+total_edited_positions = cursor.fetchall()[0][0]
+print(f'{remaining_positions}/{num_positions} remaining, {remaining_positions / num_positions * 100}% ')
+print(f'total edited positions: {total_edited_positions}, {total_edited_positions / remaining_positions * 100}% of remaining positions ')
+
+
+
 print('done')
 
 # ***************************************

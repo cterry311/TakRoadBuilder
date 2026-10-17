@@ -125,6 +125,11 @@ impl Stack {
 pub struct Move(u16);
 
 impl Move {
+
+    #[inline] pub fn raw(self) -> u16 { self.0 }
+
+    #[inline] pub fn from_raw(raw: u16) -> Move { Move(raw) }
+
     #[inline] pub fn place(sq: usize, kind: Kind) -> Move {
         Move(((sq as u16) << 1) | ((kind as u16) << 7))
     }
@@ -376,6 +381,12 @@ static DROP_MASKS: Lazy<[Vec<u8>; ARRAY_LENGTH as usize]> = Lazy::new(|| {
     }
     masks
 });
+
+// ------------------------------------ tensor encoding
+
+pub const PLANES: usize = 25;
+pub const PLANE_SIZE: usize = N * N; // 36
+pub const TENSOR_LEN: usize = PLANES * PLANE_SIZE;
 
 // ---------------------------------------------------------------- game
 
@@ -913,9 +924,81 @@ impl Tak {
         format!("{} {} {}", rows.join("/"), player, self.move_number())
     }
 
-    /// convert the board state to a tensor that can be used for machine learning, tensor output is as follows,
-    pub fn to_tensor(&self) -> String {
-        String::new() // I will change it to something other than a string later
+    /// Writes 25 planes in (channel, y, x) order: index = ch * 36 + y * 6 + x.
+    /// Mover-relative: "own" is the side to move.
+    ///
+    /// 0 own caps          1 opp caps
+    /// 2 own walls         3 opp walls
+    /// 4 own top flats     5 opp top flats
+    /// 6..=17 layers 2..7 below the top, (own, opp) per layer
+    /// 18 height, min(h, 16) / 16
+    /// 19 flat differential (own - opp) / 36
+    /// 20 own cap remaining     21 opp cap remaining
+    /// 22 own stones left / 30  23 opp stones left / 30
+    /// 24 all ones
+    pub fn encode_into(&self, out: &mut [f32]) {
+        debug_assert_eq!(out.len(), TENSOR_LEN);
+        out.fill(0.0);
+
+        let own = self.side_to_move();
+        let opp = own.other();
+        let own_idx = own.idx() as u64;
+
+        // constant planes: compute once
+        let flat_diff = (self.flat_tops(own).count_ones() as f32
+            - self.flat_tops(opp).count_ones() as f32)
+            / 36.0;
+        let own_cap = if self.caps_left[own.idx()] > 0 { 1.0 } else { 0.0 };
+        let opp_cap = if self.caps_left[opp.idx()] > 0 { 1.0 } else { 0.0 };
+        let own_stones = self.stones_left[own.idx()] as f32 / 30.0;
+        let opp_stones = self.stones_left[opp.idx()] as f32 / 30.0;
+
+        for y in 0..N {
+            for x in 0..N {
+                let cell = y * N + x;
+                let sq = y * STRIDE + x;
+
+                // constant planes are written on every square, empty or not
+                out[19 * PLANE_SIZE + cell] = flat_diff;
+                out[20 * PLANE_SIZE + cell] = own_cap;
+                out[21 * PLANE_SIZE + cell] = opp_cap;
+                out[22 * PLANE_SIZE + cell] = own_stones;
+                out[23 * PLANE_SIZE + cell] = opp_stones;
+                out[24 * PLANE_SIZE + cell] = 1.0;
+
+                let stack = self.stacks[sq];
+                if stack.height == 0 {
+                    continue;
+                }
+
+                // top piece: kind picks the plane pair, color picks own/opp
+                let top_is_own = stack.top_color() == own;
+                let base = match stack.kind {
+                    Kind::Cap => 0,
+                    Kind::Wall => 2,
+                    Kind::Flat => 4,
+                };
+                let ch = base + if top_is_own { 0 } else { 1 };
+                out[ch * PLANE_SIZE + cell] = 1.0;
+
+                // layers 2..7: depth d below the top is bit d (bit 0 = top)
+                let visible = (stack.height as usize).min(7);
+                for d in 1..visible {
+                    let is_own = ((stack.bits >> d) & 1) == own_idx;
+                    let ch = 6 + (d - 1) * 2 + if is_own { 0 } else { 1 };
+                    out[ch * PLANE_SIZE + cell] = 1.0;
+                }
+
+                // height
+                out[18 * PLANE_SIZE + cell] = (stack.height.min(16) as f32) / 16.0;
+            }
+        }
+    }
+
+    pub fn to_tensor(&self) -> [f32; TENSOR_LEN] {
+        let mut t = [0.0f32; TENSOR_LEN];
+        self.encode_into(&mut t);
+        t
     }
 }
 
@@ -1608,5 +1691,66 @@ mod tests {
         let original_tps = "x,2,x4/x,212S,2,1,x2/2,21C,21,1,1,1/2,x,2,x,1,1/2,1,22,1212C,121S,2/212S,x,1,1,x,1 1 30";
         let through_tps = Tak::from_tps(original_tps).unwrap().to_tps();
         assert_eq!(through_tps, original_tps);
+    }
+
+    #[test]
+    fn test_tensor_conversion() {
+        // index = ch * 36 + y * 6 + x
+        let tak = Tak::from_tps("x6/x2,2,x3/x6/x6/x6/x6 2 1"); // own flat at c5
+        let tensor = tak.unwrap().to_tensor();
+
+        // expect 1 at channel = 4, y = 4, x = 2
+        assert_eq!(tensor[4 * 36 + 4 * 6 + 2], 1.0f32);
+        // expect 0 at channel = 4, y = 4, x = 3
+        assert_eq!(tensor[4 * 36 + 4 * 6 + 3], 0.0f32);
+        // expect 1 / 16 at channel = 18, y = 4, x = 2
+        assert_eq!(tensor[18 * 36 + 4 * 6 + 2], 1.0f32 / 16.0f32);
+        // expect 1 / 36 at channel = 19
+        assert_eq!(tensor[19 * 36 + 4 * 6 + 2], 1.0f32 / 36.0f32);
+        assert_eq!(tensor[19 * 36 + 2 * 6 + 5], 1.0f32 / 36.0f32);
+        assert_eq!(tensor[19 * 36 + 3 * 6 + 3], 1.0f32 / 36.0f32);
+        assert_eq!(tensor[19 * 36 + 0 * 6 + 1], 1.0f32 / 36.0f32);
+        // expect 1 at channel 20
+        assert_eq!(tensor[20 * 36 + 0 * 6 + 5], 1.0f32);
+        assert_eq!(tensor[20 * 36 + 1 * 6 + 3], 1.0f32);
+        assert_eq!(tensor[20 * 36 + 4 * 6 + 2], 1.0f32);
+        // expect 29 / 30 at channel = 22
+        assert_eq!(tensor[22 * 36 + 3 * 6 + 5], 29f32 / 30.0f32);
+        assert_eq!(tensor[22 * 36 + 5 * 6 + 0], 29f32 / 30.0f32);
+        assert_eq!(tensor[22 * 36 + 1 * 6 + 1], 29f32 / 30.0f32);
+        // expect 1 at channel = 23
+        assert_eq!(tensor[23 * 36 + 0 * 6 + 0], 1.0f32);
+        assert_eq!(tensor[23 * 36 + 1 * 6 + 1], 1.0f32);
+        // expect 1 at channel = 24
+        assert_eq!(tensor[24 * 36 + 0 * 6 + 0], 1.0f32);
+        assert_eq!(tensor[24 * 36 + 1 * 6 + 1], 1.0f32);
+        assert_eq!(tensor[24 * 36 + 2 * 6 + 0], 1.0f32);
+
+        let tak = Tak::from_tps("x,2,1,1,2,x/1,2,211C,x2,2/2,2,x,1,1,x/x,12S,x,212,x2/1,x3,2,x/x2,1,x3 1 15");
+        let tensor = tak.unwrap().to_tensor();
+
+        // expect 1 at channel = 0 y = 4 x = 2
+        assert_eq!(tensor[0 * 36 + 4 * 6 + 2], 1.0f32);
+        // expect 1 at channel = 3 y = 2 x = 1
+        assert_eq!(tensor[3 * 36 + 2 * 6 + 1], 1.0f32);
+        // expect 1 at channel = 9 y = 2 x = 3
+        assert_eq!(tensor[9 * 36 + 2 * 6 + 3], 1.0f32);
+        // expect 3 / 16 at channel = 18 y = 2 x = 3
+        assert_eq!(tensor[18 * 36 + 2 * 6 + 3], 3.0f32 / 16.0f32);
+        // expect 2 / 16 at channel = 18 y = 2 x = 1
+        assert_eq!(tensor[18 * 36 + 2 * 6 + 1], 2.0f32 / 16.0f32);
+        // expect -1 / 36 at channel = 19
+        assert_eq!(tensor[19 * 36 + 3 * 6 + 3], -1.0f32 / 36.0f32);
+        assert_eq!(tensor[19 * 36 + 0 * 6 + 2], -1.0f32 / 36.0f32);
+        assert_eq!(tensor[19 * 36 + 5 * 6 + 3], -1.0f32 / 36.0f32);
+        assert_eq!(tensor[19 * 36 + 2 * 6 + 4], -1.0f32 / 36.0f32);
+        // expect 0 at channel = 20
+        assert_eq!(tensor[20 * 36 + 0 * 6 + 2], 0.0f32);
+        assert_eq!(tensor[20 * 36 + 1 * 6 + 3], 0.0f32);
+        assert_eq!(tensor[20 * 36 + 4 * 6 + 2], 0.0f32);
+        // expect 19 / 30 at channel = 23
+        assert_eq!(tensor[23 * 36 + 3 * 6 + 5], 19f32 / 30.0f32);
+        assert_eq!(tensor[23 * 36 + 5 * 6 + 0], 19f32 / 30.0f32);
+        assert_eq!(tensor[23 * 36 + 1 * 6 + 1], 19f32 / 30.0f32);
     }
 }
