@@ -4,3 +4,4 @@
 /rust_game/target
 /games_saved.db
 /.idea
+/model_checkpoints

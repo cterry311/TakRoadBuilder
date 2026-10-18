@@ -72,3 +72,48 @@ class Tak:
     @staticmethod
     def raw_to_ptn(mv: int) -> str:
         """accepts a move as a 16 bit integer and returns a ptn formated move string"""
+
+
+def encode_batch(games: List[Tak], buffer: np.ndarray):
+    """
+    Args:
+        games: a list of Tak games
+    buffer:
+        a numpy array of shape (n_games, 25, 6, 6)
+    accepts a list of games, mutates a buffer and replaces it with a set of tensor representations of the games
+    """
+
+def encode_training_batch(tps_strs: List[str], tensors: np.ndarray, masks: np.ndarray):
+    """
+    Args:
+        tps_strs: a list of tps strings representations of game positions
+        tensors: a numpy array to be mutated, it is of shape (n_games, 25, 6, 6)
+        masks: a numpy array to be mutated, it is of shape (n_games, 251, 6, 6)
+    buffer:
+        a numpy array of shape (n_games, 25, 6, 6)
+    accepts a list of games, mutates a buffer and replaces it with a set of tensor representations of the games
+    """
+
+def from_tps_bulk(tps_strs: List[str]) -> List[Tak]:
+    """
+    Args:
+        tps_strs: a list of tps strings representations of game positions
+    Returns:
+        a list of Tak games
+    """
+
+def raw_to_index(raw: int) -> int:
+    """
+    Args:
+       raw: a u16 encoding a move
+    Returns:
+        an integer indicating the index in the output space
+    """
+
+def bulk_raw_to_index(raws: List[int]) -> List[int]:
+    """
+    Args:
+        raws: a list of u16 indicating moves
+    Returns:
+        a list of integers inidcating an index in the output space
+    """

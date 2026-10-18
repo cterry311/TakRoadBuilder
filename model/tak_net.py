@@ -64,7 +64,7 @@ class TakNet(nn.Module):
 
         value_ops: List[nn.Module] = [
             nn.Conv2d(tr_ch, 3, 1, bias=False),
-            nn.BatchNorm1d(3),
+            nn.BatchNorm2d(3),
             nn.ReLU(),
             nn.Flatten(),
             nn.Linear(3 * 6 * 6, val_size),
@@ -74,6 +74,7 @@ class TakNet(nn.Module):
             value_ops.append(nn.Linear(val_size, val_size))
             value_ops.append(nn.ReLU())
         value_ops.append(nn.Linear(val_size, 3))
+        value_ops.append(nn.Softmax(dim=1))
         self.value = nn.Sequential(*value_ops)
 
     def forward(self, x):

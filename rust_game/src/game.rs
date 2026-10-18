@@ -281,6 +281,25 @@ impl Move {
         }
         bits
     }
+
+    /// Policy index: ch * 36 + y * 6 + x
+    /// ch 0..=2: place flat, wall, cap
+    /// ch 3..=250: slides, 3 + (mask - 1) * 4 + dir
+    #[inline]
+    pub fn policy_index(self) -> usize {
+        let sq = self.square();
+        let cell = (sq >> 3) * 6 + (sq & 7);
+        let ch = if self.is_slide() {
+            3 + (self.mask() as usize - 1) * 4 + self.dir() as usize
+        } else {
+            match self.place_kind() {
+                Kind::Flat => 0,
+                Kind::Wall => 1,
+                Kind::Cap => 2,
+            }
+        };
+        ch * 36 + cell
+    }
 }
 
 #[inline] fn set_bit(bitboard: &mut u64, sq: usize) {
@@ -1000,6 +1019,29 @@ impl Tak {
         self.encode_into(&mut t);
         t
     }
+
+    /// Accepts a buffer of shape (251, 6, 6), or otherwise of length 9036.
+    /// Access rule: ch * 36 + y * 6 + x.
+    /// Channels 0..=2: place flat, wall, cap.
+    /// Channels 3..=250: slides, ch = 3 + (mask - 1) * 4 + dir, dir order + - < >.
+    pub fn legal_mask(&self, temp_buf: &mut Vec<Move>, out_buf: &mut [u8]) {
+        out_buf.fill(0);
+        self.get_all_legal_moves(temp_buf);
+        for mv in temp_buf.iter() {
+            let sq = mv.square();
+            let cell = (sq >> 3) * 6 + (sq & 7);
+            let ch = if mv.is_slide() {
+                3 + (mv.mask() as usize - 1) * 4 + mv.dir() as usize
+            } else {
+                match mv.place_kind() {
+                    Kind::Flat => 0,
+                    Kind::Wall => 1,
+                    Kind::Cap => 2,
+                }
+            };
+            out_buf[ch * 36 + cell] = 1;
+        }
+    }
 }
 
 impl PartialEq for Tak {
@@ -1011,6 +1053,14 @@ impl PartialEq for Tak {
             && self.result == other.result
     }
 }
+
+
+
+/// acsepts a buffer of shape (251, 6, 6), or otherwise of length 9036
+/// acess rules, ch * 36 + y * 6 + x
+/// first three channels are for place flat, place wall, place cap.
+/// rest of the channels are for all carry moves, in directional order +, - , <, >
+
 
 #[cfg(test)]
 mod tests {
