@@ -73,6 +73,9 @@ class Tak:
     def raw_to_ptn(mv: int) -> str:
         """accepts a move as a 16 bit integer and returns a ptn formated move string"""
 
+    def get_legal_mask() -> np.ndarray:
+        """gets a legal move mask"""
+
 
 def encode_batch(games: List[Tak], buffer: np.ndarray):
     """
@@ -117,3 +120,9 @@ def bulk_raw_to_index(raws: List[int]) -> List[int]:
     Returns:
         a list of integers inidcating an index in the output space
     """
+
+def index_to_raw(index: int) -> int:
+    """take in an index, returns a u16 move encoding"""
+
+def index_to_ptn(index: int) -> str:
+    """take in an index, return a ptn move string"""

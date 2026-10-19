@@ -104,6 +104,16 @@ impl PyTak {
         flat.reshape([25, 6, 6])
     }
 
+    /// Returns a new uint8 array of shape (251, 6, 6); 1 marks a legal move.
+    fn get_legal_mask<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray3<u8>>> {
+        let mut scratch: Vec<Move> = Vec::with_capacity(256);
+        let mut buf = vec![0u8; POLICY_LEN];
+        self.inner.legal_mask(&mut scratch, &mut buf);
+        PyArray1::from_slice(py, &buf)      // from_slice on numpy 0.23+
+            .reshape([251, 6, 6])
+            .map_err(Into::into)
+    }
+
     fn clone(&self) -> PyTak {
         PyTak { inner: self.inner.clone() }
     }
@@ -195,4 +205,25 @@ pub fn bulk_raw_to_index(raws: Vec<u16>) -> Vec<usize> {
     raws.into_iter()
         .map(|r| Move::from_raw(r).policy_index())
         .collect()
+}
+
+// python.rs
+#[pyfunction]
+pub fn index_to_raw(index: usize) -> PyResult<u16> {
+    if index >= POLICY_LEN {
+        return Err(PyValueError::new_err(format!(
+            "policy index {index} out of range (max {})", POLICY_LEN - 1
+        )));
+    }
+    Ok(Move::from_policy_index(index).raw())
+}
+
+#[pyfunction]
+pub fn index_to_ptn(index: usize) -> PyResult<String> {
+    if index >= POLICY_LEN {
+        return Err(PyValueError::new_err(format!(
+            "policy index {index} out of range (max {})", POLICY_LEN - 1
+        )));
+    }
+    Ok(Move::from_policy_index(index).to_ptn())
 }

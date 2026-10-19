@@ -79,4 +79,4 @@ class TakNet(nn.Module):
 
     def forward(self, x):
         x = self.trunk(x)
-        return self.policy(x), self.value(x)
+        return self.policy(x), self.value(x) # value output, 0 = loss, 1 = draw, 2 = win

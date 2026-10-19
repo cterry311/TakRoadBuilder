@@ -106,6 +106,8 @@ impl Stack {
         self.height = r;
         dropped
     }
+
+
 }
 
 // ---------------------------------------------------------------- move
@@ -123,6 +125,8 @@ impl Stack {
 ///                -> bits 0, 2, 5 -> 0b100101.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Move(u16);
+
+const POLICY_LEN: usize = 251 * 6 * 6;
 
 impl Move {
 
@@ -299,6 +303,25 @@ impl Move {
             }
         };
         ch * 36 + cell
+    }
+
+    /// Inverse of policy_index. idx must be < POLICY_LEN (9036).
+    pub fn from_policy_index(idx: usize) -> Move {
+        debug_assert!(idx < POLICY_LEN);
+        let ch = idx / 36;
+        let cell = idx % 36;
+        let sq = (cell / 6) * 8 + (cell % 6);   // stride 6 -> stride 8
+        if ch < 3 {
+            let kind = match ch {
+                0 => Kind::Flat,
+                1 => Kind::Wall,
+                _ => Kind::Cap,
+            };
+            Move::place(sq, kind)
+        } else {
+            let s = ch - 3;
+            Move::slide(sq, (s % 4) as u8, (s / 4 + 1) as u8)
+        }
     }
 }
 

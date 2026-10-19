@@ -256,16 +256,56 @@ def parse_server_notation(notation : str, result):
 #print(0.1+0.2)
 
 import tak_engine
+from model.tak_net import TakNet
+import torch
+
+
+
+def get_model_move(tak, model):
+    model.eval()
+    with torch.no_grad():
+        tensor_rep = torch.from_numpy(tak.to_tensor())
+        legal_mask = torch.from_numpy(tak.get_legal_mask())
+        tensor_rep = tensor_rep.reshape(1, 25, 6, 6)
+        policy, value = model(tensor_rep)
+        value = value.flatten()
+        masked_output = policy.flatten().masked_fill(~(legal_mask.flatten().bool()), -1e9)
+        index_props = torch.softmax(masked_output, dim=0).pow(10)
+        selected_index = torch.multinomial(index_props, 1).squeeze()
+        ptn_move = tak_engine.index_to_ptn(selected_index.item())
+    return ptn_move, value
+model = TakNet()
+model.load_state_dict(torch.load('model_checkpoints/test3.pt')['weights'])
 
 tak = tak_engine.Tak()
-another_tak = tak_engine.Tak.from_tps("x6/x6/x6/x6/x6/x6 1 1")
+# tak = tak_engine.Tak.from_tps("1,2,1,1,2,1/1,2,211C,1,2,2/2,2,2,x,1,2/1,12S,x,2121S,x,12/1,2,2,12,x2/2,1,1,11112,x,1 2 30")
+# print(get_model_move(tak, model))
+
+ptn_output = '[size "6"]\n\n'
+i = 1
 while True:
-    filtered_moves, score = tak.filtered_moves(3, False)
-    tak.make_move(choice(filtered_moves))
-    print(score)
+    ptn_output += f'{i}. '
+    ptn_move, values = get_model_move(tak, model)
+    print(ptn_move, values)
+    tak.make_move(ptn_move)
+    ptn_output += ptn_move
     if tak.result() != 0:
         break
+    # own_move = input('>')
+    # tak.make_move(own_move)
+    # if tak.result() != 0:
+    #     break
+    ptn_move, values = get_model_move(tak, model)
+    print(ptn_move, values)
+    tak.make_move(ptn_move)
+    ptn_output += ' ' + ptn_move + '\n'
+    if tak.result() != 0:
+        break
+    # own_move =
+    i += 1
 
-
+print('made it')
+with open('test.ptn', 'w') as f:
+    f.write(ptn_output)
 cursor.close()
 conn.close()

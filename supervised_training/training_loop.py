@@ -13,7 +13,7 @@ val_loader = DataLoader(TakDataset(val_positions), batch_size=128, shuffle=True)
 test_loader = DataLoader(TakDataset(test_positions), batch_size=128, shuffle=True)
 
 
-import torch
+
 
 # direction order matches the engine: 0 '+', 1 '-', 2 '<', 3 '>' as (dy, dx)
 DIRS = [(1, 0), (-1, 0), (0, -1), (0, 1)]
