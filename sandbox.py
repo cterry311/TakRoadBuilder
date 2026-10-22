@@ -275,7 +275,7 @@ def get_model_move(tak, model):
         ptn_move = tak_engine.index_to_ptn(selected_index.item())
     return ptn_move, value
 model = TakNet()
-model.load_state_dict(torch.load('model_checkpoints/test3.pt')['weights'])
+model.load_state_dict(torch.load('model_checkpoints/version_1_5.pt')['weights'])
 
 tak = tak_engine.Tak()
 # tak = tak_engine.Tak.from_tps("1,2,1,1,2,1/1,2,211C,1,2,2/2,2,2,x,1,2/1,12S,x,2121S,x,12/1,2,2,12,x2/2,1,1,11112,x,1 2 30")

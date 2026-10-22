@@ -159,4 +159,4 @@ def run_training(model_load_path, model_save_path, EPOCHS=100, value_weight=0.5,
 
 
 if __name__ == '__main__':
-    run_training('test2.pt', 'test3.pt', EPOCHS=50)
+    run_training('version_2_1.pt', 'version_2_2.pt', EPOCHS=200)
