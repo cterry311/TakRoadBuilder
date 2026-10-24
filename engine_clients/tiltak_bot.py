@@ -1,7 +1,11 @@
 import subprocess
+import os
+import sys
 
 class Tiltak:
-    def __init__(self, exe, size=6, half_komi=0):
+    def __init__(self, size=6, half_komi=0):
+        here = os.path.dirname(os.path.abspath(__file__))
+        exe = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, "exe", "tiltak.exe")
         self.p = subprocess.Popen([exe], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
         self.send("tei"); self.wait_for("teiok")
         self.send(f"setoption name HalfKomi value {half_komi}")
@@ -41,10 +45,8 @@ if __name__ == "__main__":
     import os
     import sys
 
-    here = os.path.dirname(os.path.abspath(__file__))
-    exe = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, "exe", "tiltak.exe")
 
-    bot = Tiltak(exe, size=6, half_komi=0)
+    bot = Tiltak(size=6, half_komi=0)
 
     moves = []
     while True:

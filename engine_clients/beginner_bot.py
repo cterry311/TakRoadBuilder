@@ -15,6 +15,8 @@ import itertools
 import json
 import subprocess
 import threading
+import os
+import sys
 
 
 class TakEngineError(RuntimeError):
@@ -22,9 +24,11 @@ class TakEngineError(RuntimeError):
 
 
 class BeginnerBotEngine:
-    def __init__(self, exe_path):
+    def __init__(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        exe = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, "exe", "beginnerBot.exe")
         self._proc = subprocess.Popen(
-            [exe_path],
+            [exe],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -85,7 +89,7 @@ if __name__ == "__main__":
     exe = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, "exe", "beginnerBot.exe")
 
     # Self-play demo: the bot plays both sides.
-    with BeginnerBotEngine(exe) as eng:
+    with BeginnerBotEngine() as eng:
         history = []
         while True:
             r = eng.best_move(moves=history, size=6, time_ms=300)
