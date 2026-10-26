@@ -1,5 +1,6 @@
 pub mod game;
 mod python;
+mod tree;
 
 use pyo3::prelude::*;
 

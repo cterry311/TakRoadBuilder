@@ -73,7 +73,7 @@ class Tak:
     def raw_to_ptn(mv: int) -> str:
         """accepts a move as a 16 bit integer and returns a ptn formated move string"""
 
-    def get_legal_mask() -> np.ndarray:
+    def get_legal_mask(self) -> np.ndarray:
         """gets a legal move mask"""
 
 

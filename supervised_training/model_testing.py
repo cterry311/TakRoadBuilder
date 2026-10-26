@@ -113,4 +113,5 @@ def test_model(model_path, value_weight=0.5):
 
 
 if __name__ == '__main__':
-    test_model('version_1_3.pt')
+    print('testing model 6_1')
+    test_model('version_6_1.pt')

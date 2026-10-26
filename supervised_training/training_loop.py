@@ -80,6 +80,9 @@ def run_training(model_load_path, model_save_path, EPOCHS=100, value_weight=0.5,
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
     print(f'training on {device}')
+
+    PERMS_DEV = [p.to(device) for p in PERMS]
+
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
@@ -96,15 +99,20 @@ def run_training(model_load_path, model_save_path, EPOCHS=100, value_weight=0.5,
             n = len(result)
             tak_engine.encode_training_batch(tps, inputs_np[:n], output_masks_np[:n])
 
-            x = inputs[:n]
-            legal = output_masks[:n].reshape(n, -1).bool()  # (n, 9036)
-            policy_target = torch.tensor(
-                tak_engine.bulk_raw_to_index(move.tolist()))  # (n,) int64
+            # x = inputs[:n]
+            # legal = output_masks[:n].reshape(n, -1).bool()  # (n, 9036)
+            # policy_target = torch.tensor(
+            #     tak_engine.bulk_raw_to_index(move.tolist()))  # (n,) int64
+            #
+            # x, legal, policy_target = augment(x, legal, policy_target, PERMS)
+            # x = x.to(device)
+            # legal = legal.to(device)
+            # policy_target = policy_target.to(device)
 
-            x, legal, policy_target = augment(x, legal, policy_target, PERMS)
-            x = x.to(device)
-            legal = legal.to(device)
-            policy_target = policy_target.to(device)
+            x = inputs[:n].to(device)
+            legal = output_masks[:n].reshape(n, -1).bool().to(device)
+            policy_target = torch.tensor(tak_engine.bulk_raw_to_index(move.tolist())).to(device)
+            x, legal, policy_target = augment(x, legal, policy_target, PERMS_DEV)
 
             value_target = (result + 1).to(device)  # (n,) int64
 
@@ -159,4 +167,4 @@ def run_training(model_load_path, model_save_path, EPOCHS=100, value_weight=0.5,
 
 
 if __name__ == '__main__':
-    run_training('version_2_1.pt', 'version_2_2.pt', EPOCHS=200)
+    run_training('version_6_1.pt', 'version_6_2.pt', EPOCHS=200)

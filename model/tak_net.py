@@ -74,7 +74,7 @@ class TakNet(nn.Module):
             value_ops.append(nn.Linear(val_size, val_size))
             value_ops.append(nn.ReLU())
         value_ops.append(nn.Linear(val_size, 3))
-        value_ops.append(nn.Softmax(dim=1))
+        # value_ops.append(nn.Softmax(dim=1)) #value head is now logits instead of probabilities
         self.value = nn.Sequential(*value_ops)
 
     def forward(self, x):

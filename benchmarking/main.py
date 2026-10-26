@@ -9,8 +9,9 @@ import tak_engine
 
 
 
-model = TakNet()
-model.load_state_dict(torch.load('model_checkpoints/version_1_5.pt')['weights'])
+info = torch.load(f'model_checkpoints/version_6_1.pt')
+model = TakNet(**info['params'])
+model.load_state_dict(info['weights'])
 
 
 def get_model_move(tak: tak_engine.Tak, model, depth):
@@ -226,7 +227,7 @@ def run_tiltak_bot_games(search_depth, taktician_bot_time, num_games, save_games
         if save_games:
             player_white = 'Model' if i % 2 == 0 else 'Tiltak'
             player_black = 'Model' if i % 2 == 1 else 'Tiltak'
-            save_moves_to_ptn(game, moves, player_white, player_black, f'ptn_files/game_tiltak_{i}.ptn')
+            save_moves_to_ptn(game, moves, player_white, player_black, f'ptn_files/game_tiltak_{i}_4_2.ptn')
     print(f'wins: {wins}, losses: {losses}, draws: {draws}')
     print(f'total games: {wins + losses + draws}')
     return wins, losses, draws
@@ -281,9 +282,11 @@ def run_tiltak_bot_games(search_depth, taktician_bot_time, num_games, save_games
 
 # tactition time 100, and search depth 1, taktition is slightly stronger
 
-#run_taktician_bot_games(3, 2000, 10, save_games=True) # 1 win, 9 losses
+print('depth 3, model 6_1, taktition 2000 ms')
+run_taktician_bot_games(3, 2000, 100, save_games=True) # 1 win, 9 losses
 
-#run_tiltak_bot_games(1, 100, 10, save_games=True) # 0 wins, 10 losses
+# run_tiltak_bot_games(1, 100, 10, save_games=False) # 0 wins, 10 losses
 
-run_tiltak_bot_games(2, 100, 10, save_games=True)
+#run_tiltak_bot_games(2, 100, 10, save_games=True) # 0 wins, 9 losses, 1 draw
 
+# run_tiltak_bot_games(3, 100, 10, save_games=True)
