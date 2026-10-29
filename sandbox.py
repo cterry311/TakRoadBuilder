@@ -1,14 +1,14 @@
-import sqlite3
+# import sqlite3
 
 
 from python_game.game import Tak
 from random import choice
 
-conn = sqlite3.connect("games.db")
-cursor = conn.cursor()
-
-
-# cursor.execute("PRAGMA table_info(filtered_1);")
+# conn = sqlite3.connect("games.db")
+# cursor = conn.cursor()
+#
+#
+# # cursor.execute("PRAGMA table_info(filtered_1);")
 # columns = cursor.fetchall()
 #
 # print(f"Schema for 'your_table_name':")
@@ -60,56 +60,56 @@ cursor = conn.cursor()
 # for row in cursor.fetchall():
 #     print(row)
 
-def parse_server_notation(notation : str, result):
-    split_moves = notation.split(',')
-    ptn_notation = f'[Result "{result}"]\n[Size "6"]\n[Flats "30"]\n[Caps "1"]\n'
-    i = 0
-    include_number = True
-    for move in split_moves:
-        if include_number:
-            i += 1
-            ptn_notation += f'\n{i}.'
-            include_number = False
-        else:
-            include_number = True
-        move_elements = move.split(' ')
-        if move_elements[0] == 'P':
-            ptn_move = ''
-            if len(move_elements) == 3:
-                if move_elements[2] == 'C':
-                    ptn_move += 'C'
-                elif move_elements[2] == 'W':
-                    ptn_move += 'S'
-                else:
-                    raise ValueError(f'Invalid move format {move}')
-            ptn_move += move_elements[1].lower()
-            ptn_notation += f' {ptn_move}'
-        elif move_elements[0] == 'M':
-            origin = move_elements[1].lower()
-            destination = move_elements[2].lower()
-            drop_pattern = list(map(lambda x: int(x), move_elements[3:]))
-            ptn_move = ''
-            ptn_move += str(sum(drop_pattern))
-            ptn_move += origin
-            direction = ''
-            if origin[0] > destination[0]:
-                direction = '<'
-            elif origin[0] < destination[0]:
-                direction = '>'
-            elif int(origin[1]) > int(destination[1]):
-                direction = '-'
-            elif int(origin[1]) < int(destination[1]):
-                direction = '+'
-            else:
-                raise ValueError(f'Invalid move format {move}')
-            ptn_move += direction
-            for num in drop_pattern:
-                ptn_move += str(num)
-            ptn_notation += f' {ptn_move}'
-        else:
-            raise ValueError(f'Invalid move format {move}')
-    ptn_notation += f'\n{result}'
-    return ptn_notation
+# def parse_server_notation(notation : str, result):
+#     split_moves = notation.split(',')
+#     ptn_notation = f'[Result "{result}"]\n[Size "6"]\n[Flats "30"]\n[Caps "1"]\n'
+#     i = 0
+#     include_number = True
+#     for move in split_moves:
+#         if include_number:
+#             i += 1
+#             ptn_notation += f'\n{i}.'
+#             include_number = False
+#         else:
+#             include_number = True
+#         move_elements = move.split(' ')
+#         if move_elements[0] == 'P':
+#             ptn_move = ''
+#             if len(move_elements) == 3:
+#                 if move_elements[2] == 'C':
+#                     ptn_move += 'C'
+#                 elif move_elements[2] == 'W':
+#                     ptn_move += 'S'
+#                 else:
+#                     raise ValueError(f'Invalid move format {move}')
+#             ptn_move += move_elements[1].lower()
+#             ptn_notation += f' {ptn_move}'
+#         elif move_elements[0] == 'M':
+#             origin = move_elements[1].lower()
+#             destination = move_elements[2].lower()
+#             drop_pattern = list(map(lambda x: int(x), move_elements[3:]))
+#             ptn_move = ''
+#             ptn_move += str(sum(drop_pattern))
+#             ptn_move += origin
+#             direction = ''
+#             if origin[0] > destination[0]:
+#                 direction = '<'
+#             elif origin[0] < destination[0]:
+#                 direction = '>'
+#             elif int(origin[1]) > int(destination[1]):
+#                 direction = '-'
+#             elif int(origin[1]) < int(destination[1]):
+#                 direction = '+'
+#             else:
+#                 raise ValueError(f'Invalid move format {move}')
+#             ptn_move += direction
+#             for num in drop_pattern:
+#                 ptn_move += str(num)
+#             ptn_notation += f' {ptn_move}'
+#         else:
+#             raise ValueError(f'Invalid move format {move}')
+#     ptn_notation += f'\n{result}'
+#     return ptn_notation
 
 # cursor.execute('''
 #     SELECT notation from filtered_3
@@ -254,58 +254,129 @@ def parse_server_notation(notation : str, result):
 # print(cursor.fetchone())
 # cursor.close()
 #print(0.1+0.2)
+#
+# import tak_engine
+# from model.tak_net import TakNet
+# import torch
+#
+#
+#
+# def get_model_move(tak, model):
+#     model.eval()
+#     with torch.no_grad():
+#         tensor_rep = torch.from_numpy(tak.to_tensor())
+#         legal_mask = torch.from_numpy(tak.get_legal_mask())
+#         tensor_rep = tensor_rep.reshape(1, 25, 6, 6)
+#         policy, value = model(tensor_rep)
+#         value = value.flatten()
+#         masked_output = policy.flatten().masked_fill(~(legal_mask.flatten().bool()), -1e9)
+#         index_props = torch.softmax(masked_output, dim=0).pow(10)
+#         selected_index = torch.multinomial(index_props, 1).squeeze()
+#         ptn_move = tak_engine.index_to_ptn(selected_index.item())
+#     return ptn_move, value
+# model = TakNet()
+# model.load_state_dict(torch.load('model_checkpoints/version_1_5.pt')['weights'])
+#
+# tak = tak_engine.Tak()
+# # tak = tak_engine.Tak.from_tps("1,2,1,1,2,1/1,2,211C,1,2,2/2,2,2,x,1,2/1,12S,x,2121S,x,12/1,2,2,12,x2/2,1,1,11112,x,1 2 30")
+# # print(get_model_move(tak, model))
+#
+# ptn_output = '[size "6"]\n\n'
+# i = 1
+# while True:
+#     ptn_output += f'{i}. '
+#     ptn_move, values = get_model_move(tak, model)
+#     print(ptn_move, values)
+#     tak.make_move(ptn_move)
+#     ptn_output += ptn_move
+#     if tak.result() != 0:
+#         break
+#     # own_move = input('>')
+#     # tak.make_move(own_move)
+#     # if tak.result() != 0:
+#     #     break
+#     ptn_move, values = get_model_move(tak, model)
+#     print(ptn_move, values)
+#     tak.make_move(ptn_move)
+#     ptn_output += ' ' + ptn_move + '\n'
+#     if tak.result() != 0:
+#         break
+#     # own_move =
+#     i += 1
+#
+# print('made it')
+# with open('test.ptn', 'w') as f:
+#     f.write(ptn_output)
+# cursor.close()
+# conn.close()
 
-import tak_engine
-from model.tak_net import TakNet
-import torch
 
+#
+# import numpy as np
+# import torch
+# import tak_engine
+# from model.tak_net import TakNet
+# import time
+#
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#
+# info = torch.load("model_checkpoints/version_6_1.pt", map_location=device)
+# model = TakNet(**info["params"])
+# model.load_state_dict(info["weights"])
+# model.to(device).eval()                      # eval() matters: BatchNorm must not use batch stats
+#
+# BATCH = 256
+# buf = np.zeros((BATCH, 25, 6, 6), dtype=np.float32)
+# flat = buf.reshape(-1)                       # a view onto buf; Rust writes through it
+#
+# # warm up CUDA so the first real move doesn't pay kernel setup time
+# with torch.no_grad():
+#     model(torch.zeros(BATCH, 25, 6, 6, device=device))
+#
+# @torch.no_grad()
+# def run_search(tps, max_sims=None, time_limit=None, c_puct=1.5, urgency=-0.2):
+#     s = tak_engine.Search(tps, urgency, c_puct)
+#     if s.is_over():
+#         return None
+#
+#     start = time.perf_counter()
+#     while True:
+#         if max_sims is not None and s.sims() >= max_sims:
+#             break
+#         if time_limit is not None and time.perf_counter() - start >= time_limit:
+#             break
+#
+#         n = s.collect(flat, BATCH)
+#         if n == 0:                           # every descent hit a finished game; already backed up
+#             continue
+#
+#         x = torch.from_numpy(buf[:n]).to(device)
+#         policy, value = model(x)
+#
+#         pol = torch.softmax(policy.flatten(1), dim=1).cpu().numpy().reshape(-1)
+#         vp = torch.softmax(value, dim=1)
+#         val = (vp[:, 2] - vp[:, 0]).cpu().numpy()
+#
+#         s.submit(pol, val)                   # row i here must be row i of buf
+#
+#     return s.best_move_raw(), s.root_stats(), s.sims()
+#
+# tps = "1,x5/x,12,1211112C,x,2,12/12,x2,21C,2,112/x,1,1,1,x,2/x3,1,1,2/x3,1,x,2 1 24"
+# game = tak_engine.Tak.from_tps(tps)
+#
+# start_time = time.perf_counter()
+# print('started search')
+# out = run_search(tps, time_limit=20.0)
+# print('finished search')
+# if out is not None:
+#     raw, stats, sims = out
+#     game.make_move_raw(raw)
+#     print(tak_engine.Tak.raw_to_ptn(raw), "after", sims, "sims")
+#
+# print(time.perf_counter() - start_time)
 
+from engine_clients.roadbuilder import RoadBuilder
 
-def get_model_move(tak, model):
-    model.eval()
-    with torch.no_grad():
-        tensor_rep = torch.from_numpy(tak.to_tensor())
-        legal_mask = torch.from_numpy(tak.get_legal_mask())
-        tensor_rep = tensor_rep.reshape(1, 25, 6, 6)
-        policy, value = model(tensor_rep)
-        value = value.flatten()
-        masked_output = policy.flatten().masked_fill(~(legal_mask.flatten().bool()), -1e9)
-        index_props = torch.softmax(masked_output, dim=0).pow(10)
-        selected_index = torch.multinomial(index_props, 1).squeeze()
-        ptn_move = tak_engine.index_to_ptn(selected_index.item())
-    return ptn_move, value
-model = TakNet()
-model.load_state_dict(torch.load('model_checkpoints/version_1_5.pt')['weights'])
+engine = RoadBuilder('model_checkpoints/version_6_1.pt')
 
-tak = tak_engine.Tak()
-# tak = tak_engine.Tak.from_tps("1,2,1,1,2,1/1,2,211C,1,2,2/2,2,2,x,1,2/1,12S,x,2121S,x,12/1,2,2,12,x2/2,1,1,11112,x,1 2 30")
-# print(get_model_move(tak, model))
-
-ptn_output = '[size "6"]\n\n'
-i = 1
-while True:
-    ptn_output += f'{i}. '
-    ptn_move, values = get_model_move(tak, model)
-    print(ptn_move, values)
-    tak.make_move(ptn_move)
-    ptn_output += ptn_move
-    if tak.result() != 0:
-        break
-    # own_move = input('>')
-    # tak.make_move(own_move)
-    # if tak.result() != 0:
-    #     break
-    ptn_move, values = get_model_move(tak, model)
-    print(ptn_move, values)
-    tak.make_move(ptn_move)
-    ptn_output += ' ' + ptn_move + '\n'
-    if tak.result() != 0:
-        break
-    # own_move =
-    i += 1
-
-print('made it')
-with open('test.ptn', 'w') as f:
-    f.write(ptn_output)
-cursor.close()
-conn.close()
+print(engine.best_move('1,x5/x,12,1211112C,x,2,12/12,x3,22,1121C/x,1,1,1,x,2/x3,1,1,2/x3,1,x,2 2 24', time_limit=2.0)[0])

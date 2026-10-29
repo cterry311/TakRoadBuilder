@@ -126,3 +126,102 @@ def index_to_raw(index: int) -> int:
 
 def index_to_ptn(index: int) -> str:
     """take in an index, return a ptn move string"""
+
+
+import numpy.typing as npt
+
+class Search:
+    """Batched PUCT Monte Carlo tree search from a single root position.
+
+    The model runs in Python, and the tree lives in Rust. A search alternates
+    between two calls:
+
+        n = search.collect(buf, max_leaves)   # Rust picks leaves and fills buf
+        ...run the model on buf[:n]...
+        search.submit(policy, values)         # Rust expands the leaves and backs up
+
+    Row i of the model output must correspond to row i of the buffer filled by
+    the preceding collect call. Do not reorder, filter or shuffle rows.
+    """
+
+    def __init__(self, tps: str, urgency: float = -0.2, c_puct: float = 1.5) -> None:
+        """
+        Args:
+            tps: TPS string of the position to search from (the root).
+            urgency: First-play urgency offset. An unvisited child is scored as
+                (parent's average value + urgency). Use 0 or a negative value;
+                more negative focuses the search on moves that already look
+                good, and a positive value pushes it toward trying every move.
+            c_puct: Exploration constant. It scales the bonus
+                c_puct * prior * sqrt(parent visits) / (1 + child visits), so
+                larger values pull the search toward moves with high policy
+                priors and few visits. Typical starting range is about 1 to 2.
+        """
+
+    def collect(self, buf: npt.NDArray[np.float32], max_leaves: int) -> int:
+        """Descend the tree up to max_leaves times and encode each leaf reached.
+
+        Leaves that are finished games are backed up immediately with their
+        exact result and never reach the model. Duplicate selections of the
+        same leaf within one batch are discarded, so the batch can be smaller
+        than max_leaves.
+
+        Args:
+            buf: 1D float32 C-contiguous CPU array that Rust fills. Its length
+                must be at least max_leaves * 900 (25 planes * 6 * 6). Row i
+                occupies buf[i * 900:(i + 1) * 900]. Use a flat view of a
+                (max_leaves, 25, 6, 6) array, e.g. arr.reshape(-1).
+            max_leaves: Maximum number of leaves to collect.
+
+        Returns:
+            The number of rows written (n). It can be 0 if every descent ended
+            on an already-finished game. In that case skip the model call and
+            collect again. Only buf[:n] holds valid positions.
+
+        Raises:
+            ValueError: if buf is too small.
+        """
+
+    def submit(self, policy: npt.NDArray[np.float32], values: npt.NDArray[np.float32]) -> None:
+        """Send model results for the leaves from the last collect call.
+
+        Args:
+            policy: 1D float32 array of length n * 9036, the softmaxed policy
+                for each leaf (n rows of 251 * 36, flattened). Layout per row
+                matches policy_index. Priors for each leaf's legal moves are
+                renormalized in Rust, so softmaxing over all 9036 is fine.
+            values: 1D float32 array of length n, each equal to
+                p_win - p_loss from the value head, from the point of view of
+                the side to move at that leaf (range -1 to 1).
+
+        Raises:
+            ValueError: if the lengths do not match the n returned by the last
+                collect call.
+        """
+
+    def sims(self) -> int:
+        """Number of simulations completed (the root's visit count).
+
+        Only meaningful between submit and the next collect, because pending
+        leaves temporarily inflate visit counts.
+        """
+
+    def is_over(self) -> bool:
+        """True if the root position is already a finished game."""
+
+    def best_move_raw(self) -> int:
+        """Raw u16 encoding of the most-visited root move.
+
+        Convert with Tak.raw_to_ptn. Check is_over() first, since a finished
+        root has no moves.
+        """
+
+    def root_stats(self) -> list[tuple[int, int, float]]:
+        """Statistics for every root move.
+
+        Returns:
+            A list of (raw_move, visits, value) tuples, where value is the
+            average outcome from the root mover's point of view (-1 to 1). The
+            visit counts are also the natural policy training target for
+            self-play.
+        """

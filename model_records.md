@@ -111,3 +111,19 @@ avg value acc 0.66839723112865
 -------top move analisis-------------
 avg missed winning move 0.19000657462195925
 avg made losing move 0.014057310573878119
+
+depth 3, model 6_1, taktition 2000 ms
+wins: 6, losses: 92, draws: 2
+total games: 100
+
+it seems to have a value prediction that is slightly worse than model 4
+
+
+week 3 elo estimate, 1500, this was done using the formula 
+p = 1 / (1 + exp(c * (e2 - e1)))
+where p is the win probability of 1 beating 2, where draws count as 0.5 of a win
+c is a constant, I used ln(10) / 400, this is the standard constant used for elo
+e2 and e1 are the elo of bots 2 and 1.
+
+I computed my estimate using its games against beginner bot and taktition, using their listed elo on playtak.com
+it is only an estimate and probably is not even that accurate. I expect it to have a uncertainty of about +/- 200 points

@@ -2,8 +2,9 @@
 use pyo3::prelude::*;
 use pyo3::exceptions::{PyValueError, PyRuntimeError};
 use crate::game::{Tak, Move, GameResult};
+use crate::tree::{Tree};
 
-use numpy::{PyReadwriteArrayDyn, PyArray1, PyArray3, PyArrayMethods};
+use numpy::{PyReadwriteArrayDyn, PyArray1, PyArray3, PyArrayMethods, PyReadwriteArray1, PyReadonlyArray1};
 
 use crate::game::TENSOR_LEN;
 
@@ -144,6 +145,7 @@ pub fn from_tps_bulk(tps_strs: Vec<String>) -> PyResult<Vec<PyTak>> {
 }
 
 const POLICY_LEN: usize = 251 * 6 * 6;
+const INPUT_LEN: usize = 25 * 36;
 #[pyfunction]
 pub fn encode_training_batch(
     tps_strs: Vec<String>,
@@ -227,3 +229,47 @@ pub fn index_to_ptn(index: usize) -> PyResult<String> {
     }
     Ok(Move::from_policy_index(index).to_ptn())
 }
+
+
+
+
+
+
+
+#[pyclass(unsendable)]            // unsendable avoids Send requirements; fine for single-threaded use
+pub struct Search { tree: Tree }
+
+#[pymethods]
+impl Search {
+    #[new]
+    #[pyo3(signature = (tps, urgency = -0.2, c_puct = 1.5))]
+    fn new(tps: &str, urgency: f32, c_puct: f32) -> PyResult<Self> {
+        let game = Tak::from_tps(tps).map_err(PyValueError::new_err)?;
+        Ok(Search { tree: Tree::new(game, urgency, c_puct) })
+    }
+
+    fn collect(&mut self, mut buf: PyReadwriteArray1<f32>, max_leaves: usize) -> PyResult<usize> {
+        let slice = buf.as_slice_mut().map_err(|e| PyValueError::new_err(e.to_string()))?;
+        if slice.len() < max_leaves * INPUT_LEN {
+            return Err(PyValueError::new_err("buffer too small"));
+        }
+        Ok(self.tree.collect(slice, max_leaves))
+    }
+
+    fn submit(&mut self, policy: PyReadonlyArray1<f32>, values: PyReadonlyArray1<f32>) -> PyResult<()> {
+        let p = policy.as_slice().map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let v = values.as_slice().map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let n = self.tree.pending_len();
+        if p.len() != n * POLICY_LEN || v.len() != n {
+            return Err(PyValueError::new_err("policy/values length does not match pending leaves"));
+        }
+        self.tree.submit(p, v);
+        Ok(())
+    }
+
+    fn sims(&self) -> u32 { self.tree.sims() }
+    fn is_over(&self) -> bool { self.tree.is_over() }
+    fn best_move_raw(&self) -> u16 { self.tree.best_move().raw() }
+    fn root_stats(&self) -> Vec<(u16, u32, f32)> { self.tree.root_stats() }
+}
+

@@ -88,7 +88,7 @@ MAX_LAYERS = 10     # stack layers drawn on a square; taller stacks are compress
 # Evaluators are never called on positions where the game is over; the bars
 # show the actual result there instead.
 
-info = torch.load(f'model_checkpoints/version_4_2.pt')
+info = torch.load(f'model_checkpoints/version_6_1.pt')
 _TAK_MODEL = TakNet(**info['params'])
 _TAK_MODEL.load_state_dict(info['weights'])
 
