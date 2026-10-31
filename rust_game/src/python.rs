@@ -271,5 +271,14 @@ impl Search {
     fn is_over(&self) -> bool { self.tree.is_over() }
     fn best_move_raw(&self) -> u16 { self.tree.best_move().raw() }
     fn root_stats(&self) -> Vec<(u16, u32, f32)> { self.tree.root_stats() }
+
+    fn root_q(&self) -> f32 { self.tree.root_q() }
+
+    fn add_noise(&mut self, alpha: f32, eps: f32, seed: u64) -> PyResult<()> {
+        self.tree.add_root_noise(alpha, eps, seed);
+        Ok(())
+    }
+
+    fn to_string(&self) -> String { self.tree.to_string() }
 }
 

@@ -127,3 +127,23 @@ e2 and e1 are the elo of bots 2 and 1.
 
 I computed my estimate using its games against beginner bot and taktition, using their listed elo on playtak.com
 it is only an estimate and probably is not even that accurate. I expect it to have a uncertainty of about +/- 200 points
+
+
+after implementing search tree, here are the records against beginner bot, taktition, and tiltak
+
+beginner bot
+wins: 99, losses: 1, draws: 0
+total games: 100
+
+
+taktition
+wins: 83, losses: 16, draws: 1
+total games: 100
+
+
+tiltak
+wins: 2, losses: 98, draws: 0
+total games: 100
+
+I got pretty incosistent results here, I was abosutly cooked by tiltak, but I won agaisnt taktition with a large ratio
+the new elo estimate is now 2000, if I average my results against each of these bots

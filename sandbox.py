@@ -1,5 +1,5 @@
 # import sqlite3
-
+import tak_engine
 
 from python_game.game import Tak
 from random import choice
@@ -376,7 +376,59 @@ from random import choice
 # print(time.perf_counter() - start_time)
 
 from engine_clients.roadbuilder import RoadBuilder
+import tak_engine
 
 engine = RoadBuilder('model_checkpoints/version_6_1.pt')
 
-print(engine.best_move('1,x5/x,12,1211112C,x,2,12/12,x3,22,1121C/x,1,1,1,x,2/x3,1,1,2/x3,1,x,2 2 24', time_limit=2.0)[0])
+game = tak_engine.Tak()
+
+ptn_game = f'[size "6"]\n[player1 "Player 1"]\n[player2 "Player 2"]\n'
+
+i = 1
+while True:
+    ptn_game += f'{i}. '
+    tps = game.to_tps()
+    best_move = engine.best_move(tps, max_sims=10_000, eps=0)[0]
+    game.make_move(best_move)
+    ptn_game += f'{best_move} '
+    print(best_move)
+    if game.result() != 0:
+        break
+    tps = game.to_tps()
+    best_move = engine.best_move(tps, max_sims=10_000, eps=0)[0]
+    game.make_move(best_move)
+    ptn_game += f'{best_move}\n'
+    print(best_move)
+    if game.result() != 0:
+        break
+    i += 1
+
+
+with open("ptn_files/test2.ptn", "w") as f:
+    f.write(ptn_game)
+
+# from engine_clients.roadbuilder import RoadBuilder
+# from model.tak_net import TakNet
+# import torch
+#
+#
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#
+# info = torch.load("model_checkpoints/version_6_1.pt", map_location=device)
+# model = TakNet(**info["params"])
+# model.load_state_dict(info["weights"])
+# model.to(device).eval()
+#
+# engine = RoadBuilder('model_checkpoints/version_6_1.pt')
+#
+# game = tak_engine.Tak()
+# # game.make_move('a1')
+# # game.make_move('f6')
+# # game.make_move('d4')
+#
+# print('starting search...')
+# move, info, num_simulations, root_value = engine.best_move(game.to_tps(), max_sims=10_000)
+# print(f'best move: {move}, num simulations: {num_simulations}, root_value: {root_value}')
+# info = sorted(info, key=lambda x: x[1], reverse=True)
+# for part in info:
+#     print(f"move: {tak_engine.Tak.raw_to_ptn(part[0])}, num visits: {part[1]}, q value: {part[2]},")

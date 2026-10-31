@@ -88,9 +88,11 @@ MAX_LAYERS = 10     # stack layers drawn on a square; taller stacks are compress
 # Evaluators are never called on positions where the game is over; the bars
 # show the actual result there instead.
 
-info = torch.load(f'model_checkpoints/version_6_1.pt')
-_TAK_MODEL = TakNet(**info['params'])
-_TAK_MODEL.load_state_dict(info['weights'])
+# info = torch.load(f'model_checkpoints/version_6_1.pt')
+# _TAK_MODEL = TakNet(**info['params'])
+# _TAK_MODEL.load_state_dict(info['weights'])
+from engine_clients.roadbuilder import RoadBuilder
+_ROADBUILDER = RoadBuilder('model_checkpoints/version_6_1.pt')
 
 def evaluate_model(tps: str):
     # >>> INSERT MODEL EVAL HERE <<<
@@ -98,18 +100,23 @@ def evaluate_model(tps: str):
     #   game = tak_engine.Tak.from_tps(tps)
     #   value = net(torch.from_numpy(game.to_tensor()).unsqueeze(0)) ...
     #   return value if tps.split()[1] == "1" else -value
-    tak_game = tak_engine.Tak.from_tps(tps)
-    _TAK_MODEL.eval()
-    with torch.no_grad():
-        tensor_rep = torch.from_numpy(tak_game.to_tensor())
-        tensor_rep = tensor_rep.reshape(1, 25, 6, 6)
-        _, values = _TAK_MODEL(tensor_rep)
-        probs = torch.nn.functional.softmax(values, dim=1).flatten()
-        pos_value = probs[2].item() - probs[0].item()
-        if tps.split(' ')[1] == '2':
-            pos_value *= -1
-    return pos_value
 
+    # tak_game = tak_engine.Tak.from_tps(tps)
+    # _TAK_MODEL.eval()
+    # with torch.no_grad():
+    #     tensor_rep = torch.from_numpy(tak_game.to_tensor())
+    #     tensor_rep = tensor_rep.reshape(1, 25, 6, 6)
+    #     _, values = _TAK_MODEL(tensor_rep)
+    #     probs = torch.nn.functional.softmax(values, dim=1).flatten()
+    #     pos_value = probs[2].item() - probs[0].item()
+    #     if tps.split(' ')[1] == '2':
+    #         pos_value *= -1
+    # return pos_value
+
+    value = _ROADBUILDER.best_move(tps, max_sims=20_000, eps=0)[3]
+    if tps.split(' ')[1] == '2':
+        value *= -1
+    return value
 
 TILTAK_MOVETIME_MS = 2000   # search time per position; higher = stronger but slower eval
 _tiltak = None

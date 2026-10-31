@@ -225,3 +225,33 @@ class Search:
             visit counts are also the natural policy training target for
             self-play.
         """
+
+    def root_q(self) -> float:
+        """
+        the q value at the root,
+
+        Returns:
+            the q value at the root
+        """
+
+    def add_noise(self, alpha: float, eps: float, seed: int) -> None:
+        """Mix Dirichlet noise into the root children's priors (self-play exploration).
+
+            Call once, after the first collect/submit round has expanded the root and
+            before the next collect. Skip it when playing matches for strength.
+
+            Args:
+                alpha: Dirichlet concentration. Smaller values (e.g. 0.05 to 0.3) give
+                    spiky noise that strongly boosts a few random moves; larger values
+                    spread noise evenly. A common rule of thumb is about
+                    10 / (typical number of legal moves).
+                eps: Fraction of the final prior taken from noise, in [0, 1]. The new
+                    prior is (1 - eps) * old + eps * noise. 0 disables noise; 0.25 is
+                    the usual starting value.
+                seed: Seed for the random generator. The same seed reproduces the same
+                    noise, so use a different seed for each game.
+        """
+
+    def to_string(self) -> str:
+        """ converts the tree to a json string
+        """

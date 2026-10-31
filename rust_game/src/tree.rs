@@ -1,3 +1,6 @@
+use rand::{rngs::StdRng, SeedableRng};
+use rand_distr::{Distribution, Gamma};
+
 use crate::game::{Tak, Move, GameResult};
 
 const POLICY_LEN: usize = 251 * 36;
@@ -21,6 +24,11 @@ struct Node {
 impl Node {
     fn q(&self) -> f32 {
         if self.n == 0 { 0.0 } else { self.w / self.n as f32 }
+    }
+
+    /// get a json representation of the node
+    pub fn to_string(&self) -> String {
+        format!("{{ \"ptn\": \"{}\", \"prior\": {}, \"n\": {}, \"w\": {}, \"q\": {}, \"first_child\": {}, \"n_children\": {} }}", self.mv.to_ptn(), self.prior, self.n, self.w, self.q(), self.first_child, self.n_children)
     }
 }
 
@@ -189,6 +197,41 @@ impl Tree {
         (root.first_child..root.first_child + root.n_children)
             .map(|i| (self.nodes[i].mv.raw(), self.nodes[i].n, -self.nodes[i].q()))
             .collect()
+    }
+
+    pub fn root_q(&self) -> f32 {
+        self.nodes[0].q()
+    }
+
+    /// get a json representation of the search tree
+    pub fn to_string(&self) -> String {
+        let child_strs: Vec<String> = self.nodes.iter().map(|m| m.to_string()).collect();
+        format!("{{ \"tps\": \"{}\", \"nodes\": [{}] }}", self.root.to_tps(), child_strs.join(", "))
+    }
+
+    pub fn add_root_noise(&mut self, alpha: f32, eps: f32, seed: u64) {
+        // 1. Find the root's child range. Copy the numbers out so no borrow is held.
+        let (start, end) = {
+            let root = &self.nodes[0];
+            (root.first_child, root.first_child + root.n_children)
+        };
+        if end <= start { return; }             // root not expanded yet: nothing to do
+
+        // 2. Draw one Gamma(alpha, 1) sample per child.
+        let mut rng = StdRng::seed_from_u64(seed);
+        let gamma = Gamma::new(alpha, 1.0).unwrap();
+        let mut noise: Vec<f32> = (start..end).map(|_| gamma.sample(&mut rng)).collect();
+
+        // 3. Normalize so the samples sum to 1. That is a Dirichlet(alpha, ..., alpha) draw.
+        let sum: f32 = noise.iter().sum();
+        if !(sum.is_finite() && sum > 0.0) { return; }   // tiny alpha can give all zeros: skip
+        for x in noise.iter_mut() { *x /= sum; }
+
+        // 4. Mix into the priors.
+        for (k, i) in (start..end).enumerate() {
+            let p = self.nodes[i].prior;
+            self.nodes[i].prior = (1.0 - eps) * p + eps * noise[k];
+        }
     }
 }
 

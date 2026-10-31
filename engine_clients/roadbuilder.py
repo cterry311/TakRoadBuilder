@@ -81,12 +81,21 @@ class RoadBuilder:
             self.model(torch.zeros(self.BATCH, 25, 6, 6, device=self.device))
 
     @torch.no_grad()
-    def best_move(self, tps, max_sims=None, time_limit=None, c_puct=1.5, urgency=-0.2):
+    def best_move(self, tps: str, max_sims=None, time_limit=None, c_puct=1.5, urgency=-0.2, alpha=0.1, eps=0.25, seed=None):
+        if seed is None:
+            seed = int(time.time() * 1000)
+        if time_limit is not None:
+            time_limit = time_limit / 1000.0
         s = tak_engine.Search(tps, urgency, c_puct)
         if s.is_over():
             return None
 
         start = time.perf_counter()
+        # if max_sims is None:
+        #     ply = int(tps.split(' ')[2])
+        #     if ply <= 8:
+        #         return self.best_move(tps, max_sims=2_000, time_limit=int(time_limit * 1000), c_puct=c_puct, urgency=urgency)
+        i = 0
         while True:
             if max_sims is not None and s.sims() >= max_sims:
                 break
@@ -105,4 +114,7 @@ class RoadBuilder:
             val = (vp[:, 2] - vp[:, 0]).cpu().numpy()
 
             s.submit(pol, val)  # row i here must be row i of buf
-        return tak_engine.Tak.raw_to_ptn(s.best_move_raw()), s.root_stats(), s.sims()
+            if i == 0:
+                s.add_noise(alpha, eps, seed)
+            i += 1
+        return tak_engine.Tak.raw_to_ptn(s.best_move_raw()), s.root_stats(), s.sims(), s.root_q()
