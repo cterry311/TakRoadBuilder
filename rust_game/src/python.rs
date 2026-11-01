@@ -16,13 +16,15 @@ pub struct PyTak {
 #[pymethods]
 impl PyTak {
     #[new]
-    fn new() -> Self {
-        PyTak { inner: Tak::new() }
+    #[pyo3(signature = (komi = 0))]
+    fn new(komi: u8) -> Self {
+        PyTak { inner: Tak::new_with_komi(komi) }
     }
 
     #[staticmethod]
-    fn from_tps(tps: &str) -> PyResult<PyTak> {
-        Tak::from_tps(tps)
+    #[pyo3(signature = (tps, komi = 0))]
+    fn from_tps(tps: &str, komi: u8) -> PyResult<PyTak> {
+        Tak::from_tps_with_komi(tps, komi)
             .map(|inner| PyTak { inner })
             .map_err(PyValueError::new_err)
     }
@@ -133,11 +135,12 @@ impl PyTak {
 }
 
 #[pyfunction]
-pub fn from_tps_bulk(tps_strs: Vec<String>) -> PyResult<Vec<PyTak>> {
+#[pyo3(signature = (tps_strs, komi = 0))]
+pub fn from_tps_bulk(tps_strs: Vec<String>, komi: u8) -> PyResult<Vec<PyTak>> {
     tps_strs
         .iter()
         .map(|t| {
-            Tak::from_tps(t)
+            Tak::from_tps_with_komi(t, komi)
                 .map(|inner| PyTak { inner })
                 .map_err(PyValueError::new_err)
         })
@@ -147,10 +150,12 @@ pub fn from_tps_bulk(tps_strs: Vec<String>) -> PyResult<Vec<PyTak>> {
 const POLICY_LEN: usize = 251 * 6 * 6;
 const INPUT_LEN: usize = 25 * 36;
 #[pyfunction]
+#[pyo3(signature = (tps_strs, tensor, mask, komi = 0))]
 pub fn encode_training_batch(
     tps_strs: Vec<String>,
     mut tensor: PyReadwriteArrayDyn<f32>,
     mut mask: PyReadwriteArrayDyn<u8>,
+    komi: u8,
 ) -> PyResult<()> {
     let t = tensor
         .as_slice_mut()
@@ -167,7 +172,7 @@ pub fn encode_training_batch(
         .zip(t.chunks_exact_mut(TENSOR_LEN))
         .zip(m.chunks_exact_mut(POLICY_LEN))
     {
-        let tak = Tak::from_tps(tps).map_err(PyValueError::new_err)?;
+        let tak = Tak::from_tps_with_komi(tps, komi).map_err(PyValueError::new_err)?;
         tak.encode_into(tc);
         tak.legal_mask(&mut scratch, mc);
     }
@@ -242,9 +247,9 @@ pub struct Search { tree: Tree }
 #[pymethods]
 impl Search {
     #[new]
-    #[pyo3(signature = (tps, urgency = -0.2, c_puct = 1.5))]
-    fn new(tps: &str, urgency: f32, c_puct: f32) -> PyResult<Self> {
-        let game = Tak::from_tps(tps).map_err(PyValueError::new_err)?;
+    #[pyo3(signature = (tps, urgency = -0.2, c_puct = 1.5, komi = 0))]
+    fn new(tps: &str, urgency: f32, c_puct: f32, komi: u8) -> PyResult<Self> {
+        let game = Tak::from_tps_with_komi(tps, komi).map_err(PyValueError::new_err)?;
         Ok(Search { tree: Tree::new(game, urgency, c_puct) })
     }
 

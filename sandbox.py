@@ -375,37 +375,37 @@ from random import choice
 #
 # print(time.perf_counter() - start_time)
 
-from engine_clients.roadbuilder import RoadBuilder
-import tak_engine
-
-engine = RoadBuilder('model_checkpoints/version_6_1.pt')
-
-game = tak_engine.Tak()
-
-ptn_game = f'[size "6"]\n[player1 "Player 1"]\n[player2 "Player 2"]\n'
-
-i = 1
-while True:
-    ptn_game += f'{i}. '
-    tps = game.to_tps()
-    best_move = engine.best_move(tps, max_sims=10_000, eps=0)[0]
-    game.make_move(best_move)
-    ptn_game += f'{best_move} '
-    print(best_move)
-    if game.result() != 0:
-        break
-    tps = game.to_tps()
-    best_move = engine.best_move(tps, max_sims=10_000, eps=0)[0]
-    game.make_move(best_move)
-    ptn_game += f'{best_move}\n'
-    print(best_move)
-    if game.result() != 0:
-        break
-    i += 1
-
-
-with open("ptn_files/test2.ptn", "w") as f:
-    f.write(ptn_game)
+# from engine_clients.roadbuilder import RoadBuilder
+# import tak_engine
+#
+# engine = RoadBuilder('model_checkpoints/version_6_1.pt')
+#
+# game = tak_engine.Tak()
+#
+# ptn_game = f'[size "6"]\n[player1 "Player 1"]\n[player2 "Player 2"]\n'
+#
+# i = 1
+# while True:
+#     ptn_game += f'{i}. '
+#     tps = game.to_tps()
+#     best_move = engine.best_move(tps, max_sims=10_000, eps=0)[0]
+#     game.make_move(best_move)
+#     ptn_game += f'{best_move} '
+#     print(best_move)
+#     if game.result() != 0:
+#         break
+#     tps = game.to_tps()
+#     best_move = engine.best_move(tps, max_sims=10_000, eps=0)[0]
+#     game.make_move(best_move)
+#     ptn_game += f'{best_move}\n'
+#     print(best_move)
+#     if game.result() != 0:
+#         break
+#     i += 1
+#
+#
+# with open("ptn_files/test2.ptn", "w") as f:
+#     f.write(ptn_game)
 
 # from engine_clients.roadbuilder import RoadBuilder
 # from model.tak_net import TakNet
@@ -432,3 +432,79 @@ with open("ptn_files/test2.ptn", "w") as f:
 # info = sorted(info, key=lambda x: x[1], reverse=True)
 # for part in info:
 #     print(f"move: {tak_engine.Tak.raw_to_ptn(part[0])}, num visits: {part[1]}, q value: {part[2]},")
+
+
+
+
+
+
+
+
+import sys
+import sqlite3
+import tak_engine
+
+# ---- easy-to-swap settings ----
+DB_PATH = "self_play.db"
+GAME_ID = 4                      # overridden by the first command-line argument
+OUT_PATH = f"ptn_files/test_{GAME_ID}.ptn"                  # None -> "game_{id}.ptn"
+
+RESULT_TAGS = {1: "1-0", 2: "0-1", 3: "1/2-1/2", 0: "0-0"}   # 0 = hit the ply cap, no result
+
+
+def export_game(db_path, game_id, out_path=None):
+    conn = sqlite3.connect(db_path)
+    g = conn.execute(
+        """SELECT seed, model, komi, max_sims, temp_plies, n_plies, outcome, end_reason
+           FROM self_play_games WHERE id = ?""", (game_id,)).fetchone()
+    if g is None:
+        raise SystemExit(f"no game with id {game_id} in {db_path}")
+    seed, model, komi, max_sims, temp_plies, n_plies, outcome, end_reason = g
+
+    rows = conn.execute(
+        "SELECT move_raw FROM self_play_positions WHERE game_id = ? ORDER BY ply",
+        (game_id,)).fetchall()
+    conn.close()
+    raws = [r[0] for r in rows]
+    ptn_moves = [tak_engine.Tak.raw_to_ptn(r) for r in raws]
+
+    # sanity check: replay the moves and compare with the stored outcome
+    game = tak_engine.Tak(komi=komi)
+    for r in raws:
+        game.make_move_raw(r)
+    if game.result() != outcome:
+        print(f"WARNING: replay result {game.result()} != stored outcome {outcome}")
+
+    result = RESULT_TAGS.get(outcome, "0-0")
+    headers = [
+        ("Site", "self-play"),
+        ("Event", f"self-play game {game_id}"),
+        ("Player1", "white"),
+        ("Player2", "black"),
+        ("Size", "6"),
+        ("Komi", str(komi)),
+        ("Result", result),
+        ("Seed", str(seed)),
+        ("Model", str(model)),
+        ("MaxSims", str(max_sims)),
+        ("TempPlies", str(temp_plies)),
+        ("EndReason", str(end_reason)),
+    ]
+
+    lines = [f'[{k} "{v}"]' for k, v in headers]
+    lines.append("")
+    for i in range(0, len(ptn_moves), 2):
+        pair = ptn_moves[i:i + 2]
+        lines.append(f"{i // 2 + 1}. " + " ".join(pair))
+    lines.append(result)
+
+    out_path = out_path or f"game_{game_id}.ptn"
+    with open(out_path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    print(f"wrote {out_path} ({len(ptn_moves)} plies, result {result})")
+
+
+if __name__ == "__main__":
+    gid = int(sys.argv[1]) if len(sys.argv) > 1 else GAME_ID
+    export_game(DB_PATH, gid, OUT_PATH)
+

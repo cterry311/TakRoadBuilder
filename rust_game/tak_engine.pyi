@@ -6,12 +6,21 @@ class Tak:
     Positions are exchanged as TPS strings and moves as PTN strings.
     """
 
-    def __init__(self) -> None:
-        """Create a new game at the starting position."""
+    def __init__(self, komi: int = 0) -> None:
+        """Create a new game at the starting position.
+
+        Args:
+            komi: flats added to black's count when scoring a flat win, and in
+                the flat differential plane of the tensor encoding (0 to 255).
+        """
 
     @staticmethod
-    def from_tps(tps: str) -> "Tak":
+    def from_tps(tps: str, komi: int = 0) -> "Tak":
         """Build a game from a TPS string.
+
+        Args:
+            tps: the position. TPS has no field for komi, so pass it separately.
+            komi: flats added to black's count, same as in ``__init__``.
 
         Raises:
             ValueError: if the TPS string is malformed.
@@ -86,21 +95,23 @@ def encode_batch(games: List[Tak], buffer: np.ndarray):
     accepts a list of games, mutates a buffer and replaces it with a set of tensor representations of the games
     """
 
-def encode_training_batch(tps_strs: List[str], tensors: np.ndarray, masks: np.ndarray):
+def encode_training_batch(tps_strs: List[str], tensors: np.ndarray, masks: np.ndarray, komi: int = 0):
     """
     Args:
         tps_strs: a list of tps strings representations of game positions
         tensors: a numpy array to be mutated, it is of shape (n_games, 25, 6, 6)
         masks: a numpy array to be mutated, it is of shape (n_games, 251, 6, 6)
+        komi: flats added to black's count, applied to every position
     buffer:
         a numpy array of shape (n_games, 25, 6, 6)
     accepts a list of games, mutates a buffer and replaces it with a set of tensor representations of the games
     """
 
-def from_tps_bulk(tps_strs: List[str]) -> List[Tak]:
+def from_tps_bulk(tps_strs: List[str], komi: int = 0) -> List[Tak]:
     """
     Args:
         tps_strs: a list of tps strings representations of game positions
+        komi: flats added to black's count, applied to every game
     Returns:
         a list of Tak games
     """
@@ -144,7 +155,7 @@ class Search:
     the preceding collect call. Do not reorder, filter or shuffle rows.
     """
 
-    def __init__(self, tps: str, urgency: float = -0.2, c_puct: float = 1.5) -> None:
+    def __init__(self, tps: str, urgency: float = -0.2, c_puct: float = 1.5, komi: int = 0) -> None:
         """
         Args:
             tps: TPS string of the position to search from (the root).
@@ -156,6 +167,8 @@ class Search:
                 c_puct * prior * sqrt(parent visits) / (1 + child visits), so
                 larger values pull the search toward moves with high policy
                 priors and few visits. Typical starting range is about 1 to 2.
+            komi: flats added to black's count when the search scores flat
+                wins and encodes positions for the model.
         """
 
     def collect(self, buf: npt.NDArray[np.float32], max_leaves: int) -> int:

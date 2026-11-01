@@ -455,6 +455,8 @@ pub struct Tak {
 
     // for unmake
     pub history: Vec<Undo>,
+
+    pub komi: u8,
 }
 
 impl Tak {
@@ -469,6 +471,22 @@ impl Tak {
             ply: 0,
             result: GameResult::Ongoing,
             history: Vec::new(),
+            komi: 0,
+        }
+    }
+
+    pub fn new_with_komi(komi: u8) -> Tak {
+        Tak {
+            stacks: [Stack::EMPTY; SQUARES],
+            top: [0; 2],
+            walls: 0,
+            caps: 0,
+            stones_left: [STONES; 2],
+            caps_left: [CAPS; 2],
+            ply: 0,
+            result: GameResult::Ongoing,
+            history: Vec::new(),
+            komi: komi,
         }
     }
 
@@ -659,7 +677,9 @@ impl Tak {
         }
         if self.ply >= 35 { // there are 36 spaces on the board, so 35 is the first ply where a flat win is possible
             if self.identify_flat_win() {
-                self.result = match self.flat_tops(Color::White).count_ones().cmp(&self.flat_tops(Color::Black).count_ones()) {
+                let white_flats = self.flat_tops(Color::White).count_ones();
+                let black_flats = self.flat_tops(Color::Black).count_ones() + self.komi as u32; // komi is added to black's flat count
+                self.result = match white_flats.cmp(&black_flats) {
                     Ordering::Equal => GameResult::Draw,
                     Ordering::Greater => GameResult::WhiteWin,
                     Ordering::Less => GameResult::BlackWin,
@@ -841,6 +861,13 @@ impl Tak {
         score
     }
 
+    /// Same as `from_tps`, but sets komi (TPS has no field for it).
+    pub fn from_tps_with_komi(tps: &str, komi: u8) -> Result<Tak, String> {
+        let mut tak = Tak::from_tps(tps)?;
+        tak.komi = komi;
+        Ok(tak)
+    }
+
     pub fn from_tps(tps: &str) -> Result<Tak, String> {
         let parts: Vec<&str> = tps.split_whitespace().collect();
         if parts.len() != 3 {
@@ -987,8 +1014,10 @@ impl Tak {
         let own_idx = own.idx() as u64;
 
         // constant planes: compute once
-        let flat_diff = (self.flat_tops(own).count_ones() as f32
-            - self.flat_tops(opp).count_ones() as f32)
+        // komi is added to black's flat count
+        let komi_of = |c: Color| if c == Color::Black { self.komi as f32 } else { 0.0 };
+        let flat_diff = (self.flat_tops(own).count_ones() as f32 + komi_of(own)
+            - self.flat_tops(opp).count_ones() as f32 - komi_of(opp))
             / 36.0;
         let own_cap = if self.caps_left[own.idx()] > 0 { 1.0 } else { 0.0 };
         let opp_cap = if self.caps_left[opp.idx()] > 0 { 1.0 } else { 0.0 };
