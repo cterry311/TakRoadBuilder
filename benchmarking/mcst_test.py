@@ -10,12 +10,12 @@ import tak_engine
 
 from engine_clients.roadbuilder import RoadBuilder
 
-model_client = RoadBuilder('model_checkpoints/version_8_2.pt')
+model_client = RoadBuilder('model_checkpoints/version_9_5.pt')
 
 
 def get_model_move(game: tak_engine.Tak, search_time, c_puct, urgency):
     tps = game.to_tps()
-    best_move = model_client.best_move(tps, time_limit=search_time, c_puct=c_puct, urgency=urgency)[0]
+    best_move = model_client.best_move(tps, time_limit=search_time, c_puct=c_puct, urgency=urgency, komi=2)[0]
     return best_move
 
 
@@ -182,7 +182,7 @@ def run_tiltak_bot_games(taktician_bot_time, model_time, c_puct, urgency, num_ga
         if save_games:
             player_white = 'Model' if i % 2 == 0 else 'Tiltak'
             player_black = 'Model' if i % 2 == 1 else 'Tiltak'
-            save_moves_to_ptn(game, moves, player_white, player_black, f'ptn_files/game_tiltak_{i}_8_2.ptn')
+            save_moves_to_ptn(game, moves, player_white, player_black, f'ptn_files/game_tiltak_{i}_9_5.ptn')
     print(f'wins: {wins}, losses: {losses}, draws: {draws}')
     print(f'total games: {wins + losses + draws}')
     return wins, losses, draws

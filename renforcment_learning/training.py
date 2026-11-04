@@ -12,7 +12,7 @@ from engine_clients.tiltak_bot import Tiltak
 # ---------------- settings ----------------
 DB_PATH = "self_play_records/self_play_1.db"
 LOAD_PATH = "version_9_1.pt"          # inside model_checkpoints/
-SAVE_PATH = "version_9_2.pt"
+SAVE_PATH = "version_9_5.pt"
 EPOCHS = 20
 BATCH = 128
 LR = 3e-4                             # lower than supervised (guess, tune)
@@ -74,7 +74,7 @@ def augment(x, legal, target, played, perms):
     return x_o, legal_o, target_o, played_o
 
 # ---------------- loss ----------------
-def compute_losses(policy, value_logits, legal, target, played, value_class, q, sampled):
+def compute_losses(policy, value_logits, legal, target, played, value_class, q, sampled, tiltak_values=None):
     logits = policy.flatten(1).masked_fill(~legal, -1e9)
     logp = F.log_softmax(logits, dim=1)
 
@@ -90,12 +90,20 @@ def compute_losses(policy, value_logits, legal, target, played, value_class, q, 
     p_a = logp_a.exp().clamp(max=1 - 1e-6)
     pos = A.clamp(min=0) * (-logp_a)                           # won more than expected: raise move
     neg = (-A).clamp(min=0) * (-torch.log1p(-p_a))             # lost more than expected: lower move
-    adv = ((pos + neg) * sampled).mean()                       # sampled moves only
-    # adv = (pos + neg).mean()                                   # all moves have this loss applied, not just sampled
 
 
-    total = policy_loss + W_V * value_ce + GAMMA * value_q + BETA * adv
-    return total, dict(policy=policy_loss, value_ce=value_ce, value_q=value_q, adv=adv)
+    #adv = ((pos + neg) * sampled).mean()                       # sampled moves only
+    adv = (pos + neg).mean()  # all moves have this loss applied, not just sampled
+
+    if tiltak_values is not None:
+        # tiltak_losses = (F.mse_loss(probs[:, 2] - probs[:, 0], tiltak_values, reduction='none') * sampled).mean() # sampled moves only
+        tiltak_losses = F.mse_loss(probs[:, 2] - probs[:, 0], tiltak_values)   # all moves
+    else:
+        tiltak_losses = torch.scalar_tensor(0)
+
+    total = policy_loss + W_V * value_ce + GAMMA * value_q + BETA * adv + tiltak_losses * 2.0
+
+    return total, dict(policy=policy_loss, value_ce=value_ce, value_q=value_q, adv=adv, tiltak_losses=tiltak_losses)
 
 # ---------------- batch preparation ----------------
 def prepare(batch, bufs, komi, device):
@@ -109,8 +117,15 @@ def prepare(batch, bufs, komi, device):
             value_class.to(device).long(), q.to(device).float(), sampled.to(device).float())
 
 # ----------------- tiltak evals ---------------
-def get_tiltak_evals(tps: list[str]):
+
+_tiltak = Tiltak(half_komi=4)
+
+def get_tiltak_evals(tps: list[str], device):
     n = len(tps)
+    values = torch.zeros(n)
+    for i in range(n):
+        values[i] = _tiltak.evaluate(position=tps[i], nodes=100)["value"]
+    return values.to(device)
 
 
 
@@ -149,13 +164,13 @@ def run():
         model.train()
         sums, count = {}, 0
         for batch in train_loader:
-
+            tiltak_values = get_tiltak_evals(batch[0], device)
             x, legal, target, played, vclass, q, sampled = prepare(batch, bufs, komi, device)
             x, legal, target, played = augment(x, legal, target, played, perms)
 
             optimizer.zero_grad()
             policy, value = model(x)
-            loss, parts = compute_losses(policy, value, legal, target, played, vclass, q, sampled)
+            loss, parts = compute_losses(policy, value, legal, target, played, vclass, q, sampled, tiltak_values=tiltak_values)
             loss.backward()
             optimizer.step()
 
@@ -169,9 +184,10 @@ def run():
         vs, vcount, pol_acc, val_acc = {}, 0, 0.0, 0.0
         with torch.no_grad():
             for batch in val_loader:
+                tiltak_values = get_tiltak_evals(batch[0], device)
                 x, legal, target, played, vclass, q, sampled = prepare(batch, bufs, komi, device)
                 policy, value = model(x)
-                loss, parts = compute_losses(policy, value, legal, target, played, vclass, q, sampled)
+                loss, parts = compute_losses(policy, value, legal, target, played, vclass, q, sampled, tiltak_values=tiltak_values)
                 parts["total"] = loss
                 for k, v in parts.items():
                     vs[k] = vs.get(k, 0.0) + v.item()

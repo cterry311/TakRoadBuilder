@@ -76,11 +76,11 @@ def run_self_games(model1, model2, num_positions, c_puct, urgency, num_games, ko
         if save_games:
             player_white = name_1 if i % 2 == 0 else name_2
             player_black = name_1 if i % 2 == 1 else name_2
-            save_moves_to_ptn(game, moves, player_white, player_black, f'ptn_files/{name_1}___{name_2}___{i}_corrected_mcst.ptn')
+            save_moves_to_ptn(game, moves, player_white, player_black, f'ptn_files/{name_1}___{name_2}___{i}_tiltak_trained.ptn')
     print(f'wins: {wins}, losses: {losses}, draws: {draws}')
     print(f'total games: {wins + losses + draws}')
     return wins, losses, draws
 
 
 print('self games, model 9_2')
-run_self_games('model_checkpoints/version_9_2.pt', 'model_checkpoints/version_9_2.pt', 5_000, 1.5, -0.2, 10, 2, save_games=True)
+run_self_games('model_checkpoints/version_9_5.pt', 'model_checkpoints/version_9_5.pt', 5_000, 1.5, -0.2, 10, 2, save_games=True)
