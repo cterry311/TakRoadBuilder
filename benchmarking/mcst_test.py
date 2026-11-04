@@ -10,7 +10,7 @@ import tak_engine
 
 from engine_clients.roadbuilder import RoadBuilder
 
-model_client = RoadBuilder('model_checkpoints/version_6_1.pt')
+model_client = RoadBuilder('model_checkpoints/version_8_2.pt')
 
 
 def get_model_move(game: tak_engine.Tak, search_time, c_puct, urgency):
@@ -22,7 +22,7 @@ def get_model_move(game: tak_engine.Tak, search_time, c_puct, urgency):
 
 
 def save_moves_to_ptn(game, moves, player_white, player_black, save_path):
-    ptn_game = f'[size "6"]\n[player1 "{player_white}"]\n[player2 "{player_black}"]\n'
+    ptn_game = f'[size "6"]\n[player1 "{player_white}"]\n[player2 "{player_black}"]\n[komi "2"]\n'
 
     for i, move in enumerate(moves):
         if i % 2 == 0:
@@ -138,12 +138,12 @@ def run_taktician_bot_games(taktician_bot_time, model_time, c_puct, urgency, num
 
 
 def run_tiltak_bot_games(taktician_bot_time, model_time, c_puct, urgency, num_games, save_games=False):
-    bot = Tiltak()
+    bot = Tiltak(half_komi=4)
     wins = 0
     draws = 0
     losses = 0
     for i in range(num_games):
-        game = tak_engine.Tak()
+        game = tak_engine.Tak(komi=2)
         moves = []
         k = i
         while True:
@@ -182,7 +182,7 @@ def run_tiltak_bot_games(taktician_bot_time, model_time, c_puct, urgency, num_ga
         if save_games:
             player_white = 'Model' if i % 2 == 0 else 'Tiltak'
             player_black = 'Model' if i % 2 == 1 else 'Tiltak'
-            save_moves_to_ptn(game, moves, player_white, player_black, f'ptn_files/game_tiltak_{i}_mcst_short_opening.ptn')
+            save_moves_to_ptn(game, moves, player_white, player_black, f'ptn_files/game_tiltak_{i}_8_2.ptn')
     print(f'wins: {wins}, losses: {losses}, draws: {draws}')
     print(f'total games: {wins + losses + draws}')
     return wins, losses, draws
@@ -236,4 +236,5 @@ def run_tiltak_bot_games(taktician_bot_time, model_time, c_puct, urgency, num_ga
 # total games: 100
 
 
-
+print('tiltak bot games, mutual 500 ms')
+run_tiltak_bot_games(500, 500, 1.5, -0.2, 100, save_games=True)

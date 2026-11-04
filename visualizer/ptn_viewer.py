@@ -92,7 +92,7 @@ MAX_LAYERS = 10     # stack layers drawn on a square; taller stacks are compress
 # _TAK_MODEL = TakNet(**info['params'])
 # _TAK_MODEL.load_state_dict(info['weights'])
 from engine_clients.roadbuilder import RoadBuilder
-_ROADBUILDER = RoadBuilder('model_checkpoints/version_6_1.pt')
+_ROADBUILDER = RoadBuilder('model_checkpoints/version_9_2.pt')
 
 def evaluate_model(tps: str):
     # >>> INSERT MODEL EVAL HERE <<<
@@ -113,7 +113,7 @@ def evaluate_model(tps: str):
     #         pos_value *= -1
     # return pos_value
 
-    value = _ROADBUILDER.best_move(tps, max_sims=20_000, eps=0)[3]
+    value = _ROADBUILDER.best_move(tps, max_sims=20_000, eps=0, komi=2)[3]
     if tps.split(' ')[1] == '2':
         value *= -1
     return value
@@ -127,7 +127,7 @@ def evaluate_tiltak(tps):
     # Tiltak's value is (win - loss) / 1000 from its wdl estimate, side-to-move perspective.
     global _tiltak
     if _tiltak is None or _tiltak.p.poll() is not None:   # start (or restart) the engine lazily
-        _tiltak = Tiltak()
+        _tiltak = Tiltak(half_komi=4)
     value = _tiltak.evaluate(position=tps, movetime_ms=TILTAK_MOVETIME_MS)["value"]
     if value is None:
         return None

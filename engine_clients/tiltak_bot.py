@@ -37,12 +37,17 @@ class Tiltak:
             request += f" moves {" ".join(moves)}"
         self.send(request)
 
-    def best_move(self, position=None, moves=None, movetime_ms=1000):
+    def best_move(self, position=None, moves=None, movetime_ms: int=None, nodes: int=None):
         self.send_position(position, moves)
-        self.send(f"go movetime {movetime_ms}")
+        if movetime_ms is not None:
+            self.send(f"go movetime {movetime_ms}")
+        elif nodes is not None:
+            self.send(f"go nodes {nodes}")
+        else:
+            raise ValueError('missing nodes and movetime argument, one is needed')
         return self.wait_for("bestmove").split()[1]
 
-    def evaluate(self, position=None, moves=None, movetime_ms=1000):
+    def evaluate(self, position=None, moves=None, movetime_ms: int=None, nodes: int=None):
         """Search a position and return Tiltak's evaluation of it.
 
         Everything is from the perspective of the SIDE TO MOVE. Don't pass a
@@ -58,7 +63,12 @@ class Tiltak:
             best_move: the move Tiltak would play
         """
         self.send_position(position, moves)
-        self.send(f"go movetime {movetime_ms}")
+        if movetime_ms is not None:
+            self.send(f"go movetime {movetime_ms}")
+        elif nodes is not None:
+            self.send(f"go nodes {nodes}")
+        else:
+            raise ValueError('missing nodes and movetime argument, one is needed')
 
         info = {"value": None, "score_cp": None, "mate": None, "wdl": None, "depth": None, "pv": []}
         while True:

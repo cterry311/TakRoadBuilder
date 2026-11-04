@@ -6,7 +6,7 @@ from model.tak_net import TakNet
 
 import sqlite3
 
-conn = sqlite3.connect("self_play.db")
+conn = sqlite3.connect("self_play_records/self_play_1.db")
 conn.execute("PRAGMA journal_mode=WAL")
 conn.executescript("""
 CREATE TABLE IF NOT EXISTS self_play_games (
@@ -40,7 +40,7 @@ CREATE INDEX IF NOT EXISTS idx_pos_game ON self_play_positions(game_id);
 """)
 conn.commit()
 
-ENCODER_VERSION = 1
+ENCODER_VERSION = 2
 
 
 VISIT_DTYPE = np.dtype([("move", "<u2"), ("n", "<u4")])   # 2 + 4 = 6 bytes per entry
@@ -55,7 +55,7 @@ def unpack_visits(blob):
     return [(int(m), int(n)) for m, n in arr]          # back to a list of tuples
 
 
-def sample_move(visit_counts, seed: int, T=1.0):
+def sample_move(visit_counts, seed: int, T=0.2):
     rng = np.random.default_rng(seed)
     moves = np.array([m for m, n in visit_counts])
     visits = np.array([n for m, n in visit_counts], dtype=np.float64)
@@ -204,4 +204,4 @@ def play_self(model, komi, max_sims, batch_size, c_puct, urgency, alpha, eps, te
 
 
 if __name__ == "__main__":
-    play_self('model_checkpoints/version_6_1.pt', 2, 5_000, 256, 1.5, -0.2, 0.05, 0.25, 20, 300, 1000)
+    play_self('model_checkpoints/version_9_1.pt', 2, 5_000, 256, 1.5, -0.2, 0.05, 0.25, 20, 300, 1000)

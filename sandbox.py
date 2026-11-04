@@ -445,8 +445,8 @@ import sqlite3
 import tak_engine
 
 # ---- easy-to-swap settings ----
-DB_PATH = "self_play.db"
-GAME_ID = 4                      # overridden by the first command-line argument
+DB_PATH = "self_play_records/self_play_1.db"
+GAME_ID = 9                      # overridden by the first command-line argument
 OUT_PATH = f"ptn_files/test_{GAME_ID}.ptn"                  # None -> "game_{id}.ptn"
 
 RESULT_TAGS = {1: "1-0", 2: "0-1", 3: "1/2-1/2", 0: "0-0"}   # 0 = hit the ply cap, no result
@@ -505,6 +505,8 @@ def export_game(db_path, game_id, out_path=None):
 
 
 if __name__ == "__main__":
-    gid = int(sys.argv[1]) if len(sys.argv) > 1 else GAME_ID
-    export_game(DB_PATH, gid, OUT_PATH)
+    # gid = int(sys.argv[1]) if len(sys.argv) > 1 else GAME_ID
+    # export_game(DB_PATH, gid, OUT_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    print(conn.execute("SELECT COUNT(*) FROM self_play_games WHERE encoder_version = 1 ").fetchall())
 

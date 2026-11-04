@@ -1018,7 +1018,7 @@ impl Tak {
         let komi_of = |c: Color| if c == Color::Black { self.komi as f32 } else { 0.0 };
         let flat_diff = (self.flat_tops(own).count_ones() as f32 + komi_of(own)
             - self.flat_tops(opp).count_ones() as f32 - komi_of(opp))
-            / 36.0;
+            / 6.0; // previosly was 36 in encoder versions 0 and 1
         let own_cap = if self.caps_left[own.idx()] > 0 { 1.0 } else { 0.0 };
         let opp_cap = if self.caps_left[opp.idx()] > 0 { 1.0 } else { 0.0 };
         let own_stones = self.stones_left[own.idx()] as f32 / 30.0;

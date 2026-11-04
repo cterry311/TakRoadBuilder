@@ -167,4 +167,4 @@ def run_training(model_load_path, model_save_path, EPOCHS=100, value_weight=0.5,
 
 
 if __name__ == '__main__':
-    run_training('version_6_1.pt', 'version_6_2.pt', EPOCHS=200)
+    run_training('version_9_1.pt', 'version_9_1.pt', EPOCHS=200, params={'tr_ch': 128})

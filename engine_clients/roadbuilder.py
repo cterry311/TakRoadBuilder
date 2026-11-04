@@ -81,12 +81,12 @@ class RoadBuilder:
             self.model(torch.zeros(self.BATCH, 25, 6, 6, device=self.device))
 
     @torch.no_grad()
-    def best_move(self, tps: str, max_sims=None, time_limit=None, c_puct=1.5, urgency=-0.2, alpha=0.1, eps=0.25, seed=None):
+    def best_move(self, tps: str, max_sims=None, time_limit=None, c_puct=1.5, urgency=-0.2, alpha=0.1, eps=0.25, seed=None, komi=2):
         if seed is None:
             seed = int(time.time() * 1000)
         if time_limit is not None:
             time_limit = time_limit / 1000.0
-        s = tak_engine.Search(tps, urgency, c_puct)
+        s = tak_engine.Search(tps, urgency, c_puct, komi=komi)
         if s.is_over():
             return None
 
