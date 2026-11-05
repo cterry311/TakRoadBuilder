@@ -182,7 +182,7 @@ def run_tiltak_bot_games(taktician_bot_time, model_time, c_puct, urgency, num_ga
         if save_games:
             player_white = 'Model' if i % 2 == 0 else 'Tiltak'
             player_black = 'Model' if i % 2 == 1 else 'Tiltak'
-            save_moves_to_ptn(game, moves, player_white, player_black, f'ptn_files/game_tiltak_{i}_9_5.ptn')
+            save_moves_to_ptn(game, moves, player_white, player_black, f'ptn_files/game_tiltak_{i}_9_5_long.ptn')
     print(f'wins: {wins}, losses: {losses}, draws: {draws}')
     print(f'total games: {wins + losses + draws}')
     return wins, losses, draws
@@ -236,5 +236,5 @@ def run_tiltak_bot_games(taktician_bot_time, model_time, c_puct, urgency, num_ga
 # total games: 100
 
 
-print('tiltak bot games, mutual 500 ms')
-run_tiltak_bot_games(500, 500, 1.5, -0.2, 100, save_games=True)
+print('tiltak bot games, mutual 2000 ms')
+run_tiltak_bot_games(2000, 2000, 1.5, -0.2, 100, save_games=True)

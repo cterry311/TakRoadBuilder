@@ -1,4 +1,3 @@
-from engine_clients.roadbuilder import RoadBuilder
 import tak_engine
 import torch
 import numpy as np
@@ -6,7 +5,7 @@ from model.tak_net import TakNet
 
 import sqlite3
 
-conn = sqlite3.connect("self_play_records/self_play_1.db")
+conn = sqlite3.connect("self_play_records/self_play_2.db")
 conn.execute("PRAGMA journal_mode=WAL")
 conn.executescript("""
 CREATE TABLE IF NOT EXISTS self_play_games (
@@ -204,4 +203,4 @@ def play_self(model, komi, max_sims, batch_size, c_puct, urgency, alpha, eps, te
 
 
 if __name__ == "__main__":
-    play_self('model_checkpoints/version_9_1.pt', 2, 5_000, 256, 1.5, -0.2, 0.05, 0.25, 20, 300, 1000)
+    play_self('model_checkpoints/version_9_5.pt', 2, 5_000, 256, 1.5, -0.2, 0.05, 0.25, 14, 300, 1000)
