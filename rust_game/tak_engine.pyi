@@ -85,6 +85,17 @@ class Tak:
     def get_legal_mask(self) -> np.ndarray:
         """gets a legal move mask"""
 
+    def make_move_raw(self, mv: int) -> None:
+        """ make a raw move, update the game state based on the move
+
+        Args:
+            mv:
+                the raw move
+
+        Raises:
+            RuntimeError: if the game is already over.
+        """
+
 
 def encode_batch(games: List[Tak], buffer: np.ndarray):
     """
@@ -267,4 +278,25 @@ class Search:
 
     def to_string(self) -> str:
         """ converts the tree to a json string
+        """
+
+
+    def rebase_tree(self, mv: int) -> None:
+        """ change the root of the tree to a new node, keeping only that node's subtree
+
+        The searches already done below the new root are kept, so sims() starts
+        at the new root's visit count instead of 0.
+
+        After rebasing:
+            * check is_over(), the move may have ended the game.
+            * call add_noise again if you want noise, the old root's noise was on
+              children that are now gone. If the new root is already expanded
+              (sims() > 0) it can be called right away.
+
+        Args:
+            mv: the raw move taken to transform the current root into the new root
+
+        Raises:
+            ValueError: if called between collect and submit, or if mv is not a
+                child of the root (root not expanded yet, or not a legal move).
         """

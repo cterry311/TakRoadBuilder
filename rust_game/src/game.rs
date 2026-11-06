@@ -1001,7 +1001,7 @@ impl Tak {
     /// 4 own top flats     5 opp top flats
     /// 6..=17 layers 2..7 below the top, (own, opp) per layer
     /// 18 height, min(h, 16) / 16
-    /// 19 flat differential (own - opp) / 36
+    /// 19 flat differential (own - opp) / 6
     /// 20 own cap remaining     21 opp cap remaining
     /// 22 own stones left / 30  23 opp stones left / 30
     /// 24 all ones
@@ -1808,10 +1808,10 @@ mod tests {
         // expect 1 / 16 at channel = 18, y = 4, x = 2
         assert_eq!(tensor[18 * 36 + 4 * 6 + 2], 1.0f32 / 16.0f32);
         // expect 1 / 36 at channel = 19
-        assert_eq!(tensor[19 * 36 + 4 * 6 + 2], 1.0f32 / 36.0f32);
-        assert_eq!(tensor[19 * 36 + 2 * 6 + 5], 1.0f32 / 36.0f32);
-        assert_eq!(tensor[19 * 36 + 3 * 6 + 3], 1.0f32 / 36.0f32);
-        assert_eq!(tensor[19 * 36 + 0 * 6 + 1], 1.0f32 / 36.0f32);
+        assert_eq!(tensor[19 * 36 + 4 * 6 + 2], 1.0f32 / 6.0f32);
+        assert_eq!(tensor[19 * 36 + 2 * 6 + 5], 1.0f32 / 6.0f32);
+        assert_eq!(tensor[19 * 36 + 3 * 6 + 3], 1.0f32 / 6.0f32);
+        assert_eq!(tensor[19 * 36 + 0 * 6 + 1], 1.0f32 / 6.0f32);
         // expect 1 at channel 20
         assert_eq!(tensor[20 * 36 + 0 * 6 + 5], 1.0f32);
         assert_eq!(tensor[20 * 36 + 1 * 6 + 3], 1.0f32);
@@ -1842,10 +1842,10 @@ mod tests {
         // expect 2 / 16 at channel = 18 y = 2 x = 1
         assert_eq!(tensor[18 * 36 + 2 * 6 + 1], 2.0f32 / 16.0f32);
         // expect -1 / 36 at channel = 19
-        assert_eq!(tensor[19 * 36 + 3 * 6 + 3], -1.0f32 / 36.0f32);
-        assert_eq!(tensor[19 * 36 + 0 * 6 + 2], -1.0f32 / 36.0f32);
-        assert_eq!(tensor[19 * 36 + 5 * 6 + 3], -1.0f32 / 36.0f32);
-        assert_eq!(tensor[19 * 36 + 2 * 6 + 4], -1.0f32 / 36.0f32);
+        assert_eq!(tensor[19 * 36 + 3 * 6 + 3], -1.0f32 / 6.0f32);
+        assert_eq!(tensor[19 * 36 + 0 * 6 + 2], -1.0f32 / 6.0f32);
+        assert_eq!(tensor[19 * 36 + 5 * 6 + 3], -1.0f32 / 6.0f32);
+        assert_eq!(tensor[19 * 36 + 2 * 6 + 4], -1.0f32 / 6.0f32);
         // expect 0 at channel = 20
         assert_eq!(tensor[20 * 36 + 0 * 6 + 2], 0.0f32);
         assert_eq!(tensor[20 * 36 + 1 * 6 + 3], 0.0f32);

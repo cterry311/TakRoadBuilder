@@ -284,6 +284,10 @@ impl Search {
         Ok(())
     }
 
+    fn rebase_tree(&mut self, mv: u16) -> PyResult<()> {
+        self.tree.rebase_tree(Move::from_raw(mv)).map_err(PyValueError::new_err)
+    }
+
     fn to_string(&self) -> String { self.tree.to_string() }
 }
 

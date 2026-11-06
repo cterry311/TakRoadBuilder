@@ -9,6 +9,7 @@ const INPUT_LEN: usize = 25 * 36;
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Proven { Unknown, Win, Loss, Draw }
 
+#[derive(Clone)]
 struct Node {
     mv: Move,            // move that leads INTO this node
     prior: f32,          // policy probability from the parent's expansion
@@ -30,6 +31,8 @@ impl Node {
     pub fn to_string(&self) -> String {
         format!("{{ \"ptn\": \"{}\", \"prior\": {}, \"n\": {}, \"w\": {}, \"q\": {}, \"first_child\": {}, \"n_children\": {} }}", self.mv.to_ptn(), self.prior, self.n, self.w, self.q(), self.first_child, self.n_children)
     }
+
+
 }
 
 struct Pending {
@@ -233,6 +236,38 @@ impl Tree {
             self.nodes[i].prior = (1.0 - eps) * p + eps * noise[k];
         }
     }
+
+    /// this method changes the root of the tree to the node assosiated with hte provided move from the root.
+    /// Copies only that child's subtree into a new arena, renumbering `first_child` as it goes.
+    /// Fails if a batch is pending (between collect and submit) or `mv` is not a child of the root.
+    pub fn rebase_tree(&mut self, mv: Move) -> Result<(), String> {
+        if !self.pending.is_empty() {
+            return Err("rebase_tree called between collect and submit".to_string());
+        }
+        let root = &self.nodes[0];
+        let old_idx = (root.first_child..root.first_child + root.n_children)
+            .find(|&i| self.nodes[i].mv.raw() == mv.raw())
+            .ok_or_else(|| format!("move {} is not a child of the root (root not expanded, or illegal move)", mv.to_ptn()))?;
+
+        // breadth first copy: children are stored contiguously, so each node's children
+        // land contiguously in the new arena and first_child can be rewritten as they are pushed
+        let mut new_nodes = Vec::with_capacity(self.nodes.len());
+        new_nodes.push(self.nodes[old_idx].clone());
+        let mut head = 0;
+        while head < new_nodes.len() {
+            let (first, count) = (new_nodes[head].first_child, new_nodes[head].n_children);
+            if count > 0 {
+                new_nodes[head].first_child = new_nodes.len();
+                for i in first..first + count {
+                    new_nodes.push(self.nodes[i].clone());
+                }
+            }
+            head += 1;
+        }
+        self.nodes = new_nodes;
+        self.root.make_move(mv);
+        Ok(())
+    }
 }
 
 /// Value from the view of the side to move at `g`.
@@ -242,5 +277,77 @@ fn terminal_value(g: &Tak) -> f32 {
         GameResult::WhiteWin => if white_to_move {  1.0 } else { -1.0 },
         GameResult::BlackWin => if white_to_move { -1.0 } else {  1.0 },
         _ => 0.0,
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Grow a tree with a uniform policy and value 0.
+    fn grown_tree(rounds: usize) -> Tree {
+        let mut tree = Tree::new(Tak::new(), -0.2, 1.5);
+        let mut buf = vec![0.0f32; 64 * INPUT_LEN];
+        for _ in 0..rounds {
+            let n = tree.collect(&mut buf, 64);
+            tree.submit(&vec![1.0; n * POLICY_LEN], &vec![0.0; n]);
+        }
+        tree
+    }
+
+    /// Same moves, visits and values in the same order, all the way down.
+    fn same_subtree(a: &Tree, ia: usize, b: &Tree, ib: usize) {
+        let (na, nb) = (&a.nodes[ia], &b.nodes[ib]);
+        assert_eq!(na.mv.raw(), nb.mv.raw());
+        assert_eq!((na.n, na.w, na.n_children), (nb.n, nb.w, nb.n_children));
+        for k in 0..na.n_children {
+            same_subtree(a, na.first_child + k, b, nb.first_child + k);
+        }
+    }
+
+    #[test]
+    fn rebase_keeps_exactly_the_subtree() {
+        let old = grown_tree(40);
+        let mut tree = grown_tree(40);
+        let root = &tree.nodes[0];
+        // the most visited child, so it has a real subtree
+        let child = (root.first_child..root.first_child + root.n_children)
+            .max_by_key(|&i| tree.nodes[i].n).unwrap();
+        let mv = tree.nodes[child].mv;
+        assert!(tree.nodes[child].n_children > 0);
+
+        tree.rebase_tree(mv).unwrap();
+        same_subtree(&old, child, &tree, 0);
+
+        let mut expected = old.root.clone();
+        expected.make_move(mv);
+        assert_eq!(tree.root.to_tps(), expected.to_tps());
+
+        // only the subtree is kept: count it in the old arena
+        fn count(t: &Tree, i: usize) -> usize {
+            let n = &t.nodes[i];
+            1 + (n.first_child..n.first_child + n.n_children).map(|c| count(t, c)).sum::<usize>()
+        }
+        assert_eq!(tree.nodes.len(), count(&old, child));
+
+        // the rebased tree keeps searching normally
+        let mut buf = vec![0.0f32; 64 * INPUT_LEN];
+        let before = tree.sims();
+        let n = tree.collect(&mut buf, 64);
+        tree.submit(&vec![1.0; n * POLICY_LEN], &vec![0.0; n]);
+        assert!(tree.sims() > before);
+    }
+
+    #[test]
+    fn rebase_rejects_bad_calls() {
+        // root not expanded yet
+        let mut fresh = Tree::new(Tak::new(), -0.2, 1.5);
+        assert!(fresh.rebase_tree(Move::from_ptn("a1")).is_err());
+
+        // between collect and submit
+        let mut tree = grown_tree(5);
+        let mut buf = vec![0.0f32; 64 * INPUT_LEN];
+        tree.collect(&mut buf, 64);
+        let mv = tree.nodes[tree.nodes[0].first_child].mv;
+        assert!(tree.rebase_tree(mv).is_err());
     }
 }
