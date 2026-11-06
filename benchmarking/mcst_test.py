@@ -236,5 +236,9 @@ def run_tiltak_bot_games(taktician_bot_time, model_time, c_puct, urgency, num_ga
 # total games: 100
 
 
-print('tiltak bot games, mutual 2000 ms')
-run_tiltak_bot_games(2000, 2000, 1.5, -0.2, 100, save_games=True)
+# print('tiltak bot games, mutual 2000 ms') # version_9_5
+# run_tiltak_bot_games(2000, 2000, 1.5, -0.2, 100, save_games=True)
+# wins: 82, losses: 17, draws: 1
+# total games: 100
+
+

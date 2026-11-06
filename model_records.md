@@ -144,6 +144,21 @@ total games: 100
 tiltak
 wins: 2, losses: 98, draws: 0
 total games: 100
-`
-`I got pretty incosistent results here, I was abosutly cooked by tiltak, but I won agaisnt taktition with a large ratio
+
+I got pretty incosistent results here, I was abosutly cooked by tiltak, but I won agaisnt taktition with a large ratio
 the new elo estimate is now 2000, if I average my results against each of these bots
+
+
+
+tiltak results against 9_5
+
+tiltak bot games, mutual 500 ms
+wins: 88, losses: 6, draws: 6
+total games: 100
+
+tiltak bot games, mutual 2000 ms
+wins: 82, losses: 17, draws: 1
+total games: 100
+
+
+estimated elo, 2724. this is the first point in which my bot is better than tiltak

@@ -82,5 +82,6 @@ def run_self_games(model1, model2, num_positions, c_puct, urgency, num_games, ko
     return wins, losses, draws
 
 
-print('self games, model 9_2')
-run_self_games('model_checkpoints/version_9_5.pt', 'model_checkpoints/version_9_5.pt', 5_000, 1.5, -0.2, 10, 2, save_games=True)
+# print('self games, model 9_34')
+# run_self_games('model_checkpoints/version_9_34.pt', 'model_checkpoints/version_9_5.pt', 20_000, 1.5, -0.2, 100, 2, save_games=True)
+# the version 9_34 is preforming much worse than 9_5 when given deeper searches, consider retraining on more search depth
