@@ -2,3 +2,7 @@ pip install maturin
 cd .\rust_game\
 $env:RUSTFLAGS="-C target-cpu=native"
 maturin develop --release
+
+
+
+maturin build --release --target x86_64-unknown-linux-gnu --zig --compatibility manylinux2014 --out wheels

@@ -1,7 +1,9 @@
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Gamma};
 
-use crate::game::{Tak, Move, GameResult};
+use std::collections::HashMap;
+
+use crate::game::{Tak, Move, GameResult, transform_move};
 
 const POLICY_LEN: usize = 251 * 36;
 const INPUT_LEN: usize = 25 * 36;
@@ -38,6 +40,64 @@ impl Node {
 struct Pending {
     path: Vec<usize>,    // node indices, root .. leaf
     legal: Vec<Move>,    // legal moves at the leaf, captured while the game was there
+    key: Option<(u64, usize)>, // (hash, symmetry) of the leaf, when the eval cache is on
+}
+
+/// One model evaluation, stored in the canonical orientation of the position
+/// (the symmetry `Tak::to_hash` picked), so any symmetric copy can reuse it.
+struct CacheEntry {
+    priors: Vec<(u16, f32)>, // (canonical move raw, prior) for every legal move, sorted by move
+    value: f32,              // p_win - p_loss for the side to move
+    last_used: u32,          // `EvalCache::age` when inserted or last hit
+}
+
+/// Model evaluations keyed by `Tak::to_hash`, so a position reached again by another
+/// move order (or as a mirror / rotation) skips the model. Entries not used for more
+/// than `max_age` rebases are dropped.
+struct EvalCache {
+    map: HashMap<u64, CacheEntry>,
+    max_age: u32,
+    age: u32,                // number of rebases so far
+    hits: u64,
+    misses: u64,
+}
+
+impl EvalCache {
+    fn new(max_age: u32) -> EvalCache {
+        EvalCache { map: HashMap::new(), max_age, age: 0, hits: 0, misses: 0 }
+    }
+
+    /// Priors in the order of `legal`, plus the value, if this position was evaluated before.
+    fn lookup(&mut self, hash: u64, sym: usize, legal: &[Move]) -> Option<(Vec<f32>, f32)> {
+        let age = self.age;
+        let found = self.map.get_mut(&hash).and_then(|e| {
+            if e.priors.len() != legal.len() { return None; }   // hash collision
+            let mut priors = Vec::with_capacity(legal.len());
+            for &mv in legal {
+                let canon = transform_move(mv, sym).raw();
+                let k = e.priors.binary_search_by_key(&canon, |&(m, _)| m).ok()?;
+                priors.push(e.priors[k].1);
+            }
+            e.last_used = age;
+            Some((priors, e.value))
+        });
+        if found.is_some() { self.hits += 1 } else { self.misses += 1 }
+        found
+    }
+
+    fn insert(&mut self, hash: u64, sym: usize, legal: &[Move], priors: &[f32], value: f32) {
+        let mut canon: Vec<(u16, f32)> = legal.iter().zip(priors)
+            .map(|(&mv, &p)| (transform_move(mv, sym).raw(), p))
+            .collect();
+        canon.sort_unstable_by_key(|&(m, _)| m);
+        self.map.insert(hash, CacheEntry { priors: canon, value, last_used: self.age });
+    }
+
+    fn on_rebase(&mut self) {
+        self.age += 1;
+        let (age, max_age) = (self.age, self.max_age);
+        self.map.retain(|_, e| age - e.last_used <= max_age);
+    }
 }
 
 pub struct Tree {
@@ -47,6 +107,7 @@ pub struct Tree {
     // positive values makes more likely to explore unexplored moves (bredth first), negative to prefer exploring nodes that are already explored (depth first). 0 will add no additional incentive
     c_puct: f32,         // a coefficent > 0 that controls exploration vs exploration, a larger coefficent favors branches that look very favorable but are likely already explored, lower value favors exploring boadly, including branches that may look less favorable
     pending: Vec<Pending>,// the set of pending leaves, waiting for input from the network to set the leaves value and policy
+    cache: Option<EvalCache>, // None = eval cache disabled
 }
 
 impl Tree {
@@ -55,7 +116,18 @@ impl Tree {
             mv: Move::from_raw(0), prior: 1.0, n: 0, w: 0.0,
             proven: Proven::Unknown, pending: false, first_child: 0, n_children: 0,
         };
-        Tree { nodes: vec![root_node], root, urgency, c_puct, pending: Vec::new() }
+        Tree { nodes: vec![root_node], root, urgency, c_puct, pending: Vec::new(), cache: None }
+    }
+
+    /// Turn on the eval cache. Entries unused for more than `max_age` rebases are dropped.
+    pub fn with_eval_cache(mut self, max_age: u32) -> Tree {
+        self.cache = Some(EvalCache::new(max_age));
+        self
+    }
+
+    /// (hits, misses, entries), all 0 when the cache is off.
+    pub fn cache_stats(&self) -> (u64, u64, usize) {
+        self.cache.as_ref().map_or((0, 0, 0), |c| (c.hits, c.misses, c.map.len()))
     }
 
     /// Returns the index of the chosen child of `idx`. Only call on an expanded node.
@@ -79,14 +151,19 @@ impl Tree {
         best
     }
 
-    /// Create all children for `idx`. `policy` is the full softmaxed policy row (POLICY_LEN).
-    fn expand(&mut self, idx: usize, legal: &[Move], policy: &[f32]) {
+    /// Priors for `legal` from the full softmaxed policy row (POLICY_LEN), renormalized over legal moves.
+    fn legal_priors(legal: &[Move], policy: &[f32]) -> Vec<f32> {
         let sum: f32 = legal.iter().map(|m| policy[m.policy_index()]).sum();
+        legal.iter().map(|m| policy[m.policy_index()] / sum.max(1e-9)).collect()
+    }
+
+    /// Create all children for `idx`, `priors[i]` belongs to `legal[i]`.
+    fn expand(&mut self, idx: usize, legal: &[Move], priors: &[f32]) {
         let first = self.nodes.len();
-        for &mv in legal {
+        for (&mv, &prior) in legal.iter().zip(priors) {
             self.nodes.push(Node {
                 mv,
-                prior: policy[mv.policy_index()] / sum.max(1e-9),  // renormalize over legal moves
+                prior,
                 n: 0, w: 0.0,
                 proven: Proven::Unknown, pending: false,
                 first_child: 0, n_children: 0,
@@ -147,17 +224,28 @@ impl Tree {
                 Proven::Draw => self.backup(&path,  0.0),
                 Proven::Unknown => {
                     if !self.nodes[node].pending {
-                        self.nodes[node].pending = true;
-                        self.apply_virtual_loss(&path);
-                        let row = self.pending.len();
-                        self.root.encode_into(&mut buf[row * INPUT_LEN..(row + 1) * INPUT_LEN]);
                         let mut legal = Vec::new();
                         self.root.get_all_legal_moves(&mut legal);
-                        self.pending.push(Pending { path, legal });
-                        // (path moved into pending; unmake count computed below from its length)
-                        let moves = self.pending.last().unwrap().path.len() - 1;
-                        for _ in 0..moves { self.root.unmake_move(); }
-                        continue;
+                        let key = self.cache.as_ref().map(|_| self.root.to_hash());
+
+                        // seen this position before: expand and back up right away, no model call
+                        let hit = match (self.cache.as_mut(), key) {
+                            (Some(cache), Some((hash, sym))) => cache.lookup(hash, sym, &legal),
+                            _ => None,
+                        };
+                        if let Some((priors, value)) = hit {
+                            self.expand(node, &legal, &priors);
+                            self.backup(&path, value);
+                        } else {
+                            self.nodes[node].pending = true;
+                            self.apply_virtual_loss(&path);
+                            let row = self.pending.len();
+                            self.root.encode_into(&mut buf[row * INPUT_LEN..(row + 1) * INPUT_LEN]);
+                            let moves = path.len() - 1;
+                            self.pending.push(Pending { path, legal, key });
+                            for _ in 0..moves { self.root.unmake_move(); }
+                            continue;
+                        }
                     }
                     // else: duplicate of a leaf already in this batch, discard
                 }
@@ -174,7 +262,11 @@ impl Tree {
         for (i, p) in pending.into_iter().enumerate() {
             let row = &policy[i * POLICY_LEN..(i + 1) * POLICY_LEN];
             let leaf = *p.path.last().unwrap();
-            self.expand(leaf, &p.legal, row);
+            let priors = Self::legal_priors(&p.legal, row);
+            if let (Some(cache), Some((hash, sym))) = (self.cache.as_mut(), p.key) {
+                cache.insert(hash, sym, &p.legal, &priors, values[i]);
+            }
+            self.expand(leaf, &p.legal, &priors);
             self.nodes[leaf].pending = false;
             self.remove_virtual_loss(&p.path);
             self.backup(&p.path, values[i]);
@@ -266,6 +358,9 @@ impl Tree {
         }
         self.nodes = new_nodes;
         self.root.make_move(mv);
+        if let Some(cache) = self.cache.as_mut() {
+            cache.on_rebase();
+        }
         Ok(())
     }
 }
@@ -349,5 +444,84 @@ mod tests {
         tree.collect(&mut buf, 64);
         let mv = tree.nodes[tree.nodes[0].first_child].mv;
         assert!(tree.rebase_tree(mv).is_err());
+    }
+
+    /// Uneven policy, so priors differ per move and mix-ups show up.
+    fn fake_policy(n: usize) -> Vec<f32> {
+        (0..n * POLICY_LEN).map(|i| ((i * 7919) % 101 + 1) as f32).collect()
+    }
+
+    #[test]
+    fn cache_maps_priors_through_symmetry() {
+        let t = Tak::from_tps("x,2,x4/x,212S,2,1,x2/2,21C,21,1,1,1/2,x,2,x,1,1/2,1,22,1212C,121S,2/212S,x,1,1,x,1 1 30").unwrap();
+        let mut legal = Vec::new();
+        t.get_all_legal_moves(&mut legal);
+        let priors = Tree::legal_priors(&legal, &fake_policy(1));
+        let (hash, sym) = t.to_hash();
+        let mut cache = EvalCache::new(2);
+        cache.insert(hash, sym, &legal, &priors, 0.25);
+
+        for s in 0..8 {
+            // the same position turned by symmetry s
+            let mut u = t.clone();
+            for y in 0..6 {
+                for x in 0..6 {
+                    let sq = y * 8 + x;
+                    u.stacks[crate::game::transform_sq(sq, s)] = t.stacks[sq];
+                }
+            }
+            for y in 0..6 { for x in 0..6 { u.refresh_square(y * 8 + x); } }
+            let (u_hash, u_sym) = u.to_hash();
+            assert_eq!(u_hash, hash);
+            let mut u_legal = Vec::new();
+            u.get_all_legal_moves(&mut u_legal);
+
+            let (got, value) = cache.lookup(u_hash, u_sym, &u_legal).expect("hit");
+            assert_eq!(value, 0.25);
+            // each move gets the prior of the move it corresponds to in the original
+            for (k, &mv) in legal.iter().enumerate() {
+                let i = u_legal.iter().position(|&m| m == crate::game::transform_move(mv, s)).unwrap();
+                assert_eq!(got[i], priors[k], "symmetry {s}, move {}", mv.to_ptn());
+            }
+        }
+        assert_eq!(cache.hits, 8);
+    }
+
+    #[test]
+    fn cache_hits_and_eviction() {
+        let mut tree = Tree::new(Tak::new(), -0.2, 1.5).with_eval_cache(1);
+        let mut buf = vec![0.0f32; 64 * INPUT_LEN];
+        for _ in 0..40 {
+            let n = tree.collect(&mut buf, 64);
+            tree.submit(&fake_policy(n), &vec![0.1; n]);
+        }
+        let (hits, misses, entries) = tree.cache_stats();
+        assert!(hits > 0, "opening placements transpose, expected some hits");
+        // every miss went to the model and was inserted; transpositions inside one batch share an entry
+        assert!(entries > 0 && entries as u64 <= misses);
+
+        // every visit is accounted for: root visits = model evals + cache hits (no terminals this early)
+        assert_eq!(tree.sims() as u64, misses + hits);
+
+        // entries unused for more than max_age (1) rebases are dropped
+        let mv = tree.best_move();
+        tree.rebase_tree(mv).unwrap();
+        assert_eq!(tree.cache_stats().2, entries);       // age 1: all kept
+        let n = tree.collect(&mut buf, 64);
+        tree.submit(&fake_policy(n), &vec![0.1; n]);
+        // age 2: only entries inserted or hit after the first rebase survive
+        let recent = tree.cache.as_ref().unwrap().map.values().filter(|e| e.last_used >= 1).count();
+        assert!(recent < tree.cache_stats().2);
+        let mv = tree.best_move();
+        tree.rebase_tree(mv).unwrap();
+        assert_eq!(tree.cache_stats().2, recent);
+    }
+
+    #[test]
+    fn cache_off_by_default() {
+        let mut tree = grown_tree(5);
+        let mv = tree.best_move();
+        tree.rebase_tree(mv).unwrap();
+        assert_eq!(tree.cache_stats(), (0, 0, 0));
     }
 }

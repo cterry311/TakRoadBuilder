@@ -107,8 +107,33 @@ impl Stack {
         dropped
     }
 
-
+    /// `flip` = true when we're hashing from the other player's perspective
+    fn to_hash(&self, sq: usize, flip: bool) -> u64 {
+        let h = self.height as u32;
+        if h == 0 { return 0; }                      // empty squares contribute nothing
+        let mask = (1u64 << h) - 1;
+        let mut bits = self.bits & mask;                // ignore garbage above height
+        if flip { bits ^= mask; }                    // swap colors in this stack
+        let meta = ((h as u64) << 2) | (self.kind as u64);
+        let a = mix(bits ^ sq_salt(sq));
+        mix(a ^ meta.wrapping_mul(0xD6E8FEB86659FD93))
+    }
 }
+
+
+
+#[inline]
+fn mix(mut z: u64) -> u64 {
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
+    z ^ (z >> 31)
+}
+
+fn sq_salt(sq: usize) -> u64 {
+    mix((sq as u64 + 1).wrapping_mul(0x9E3779B97F4A7C15))
+}
+
+
 
 // ---------------------------------------------------------------- move
 
@@ -1094,6 +1119,70 @@ impl Tak {
             out_buf[ch * 36 + cell] = 1;
         }
     }
+
+
+    /// Symmetry-invariant hash, from the side to move's perspective.
+    /// Returns (hash, sym): the smallest hash over the 8 board symmetries, and which
+    /// symmetry (see `transform_sq`) produced it.
+    ///
+    /// Colors are swapped when black is to move, so a position and its color-swapped
+    /// twin with the other side to move hash the same. That is only the same game when
+    /// komi is equal for both, so komi is folded in relative to the mover.
+    pub fn to_hash(&self) -> (u64, usize) {
+        let flip: bool = self.side_to_move() == Color::Black;
+        let mut best = (u64::MAX, 0);
+        for sym in 0..8 {
+            let mut h = 0u64;
+            for y in 0..N {
+                for x in 0..N {
+                    let sq = y * STRIDE + x;
+                    h = h.wrapping_add(self.stacks[sq].to_hash(transform_sq(sq, sym), flip))
+                }
+            }
+            if h < best.0 { best = (h, sym); }
+        }
+
+        // these are the same for every symmetry, so they are added after picking the minimum
+        // komi from the mover's view: (komi the mover gets, komi the opponent gets)
+        let (own_komi, opp_komi) = if flip { (self.komi, 0) } else { (0, self.komi) };
+        best.0 ^= mix(((own_komi as u64) << 8 | opp_komi as u64).wrapping_mul(0xA24BAED4963EE407));
+        // the first two plies place the opponent's color, so the same board means something else
+        if self.in_opening() { best.0 ^= 0xA5A5_5A5A_1234_5678; }
+        best
+    }
+}
+
+/// Where square `sq` lands under symmetry `sym` (0..8): bit 0 mirrors x, then
+/// `sym >> 1` quarter turns of (x, y) -> (N-1-y, x). `to_hash` uses the same mapping.
+pub fn transform_sq(sq: usize, sym: usize) -> usize {
+    let mut x: usize = sq & 7;
+    let mut y: usize = sq >> 3;
+    if sym & 1 == 1 {
+        x = N - x - 1
+    }
+    for _ in 0..((sym & 6) >> 1) {
+        let _x = N - y - 1;
+        let _y = x;
+        x = _x;
+        y = _y;
+    }
+    y * STRIDE + x
+}
+
+/// `mv` as played on the board transformed by `transform_sq(_, sym)`.
+pub fn transform_move(mv: Move, sym: usize) -> Move {
+    let sq = transform_sq(mv.square(), sym);
+    if !mv.is_slide() {
+        return Move::place(sq, mv.place_kind());
+    }
+    // direction as a vector, transformed the same way as a square difference
+    let (mut dx, mut dy): (i8, i8) = match mv.dir() { 0 => (0, 1), 1 => (0, -1), 2 => (-1, 0), _ => (1, 0) };
+    if sym & 1 == 1 { dx = -dx; }
+    for _ in 0..(sym >> 1) {
+        (dx, dy) = (-dy, dx);
+    }
+    let dir = match (dx, dy) { (0, 1) => 0, (0, -1) => 1, (-1, 0) => 2, _ => 3 };
+    Move::slide(sq, dir, mv.mask())
 }
 
 impl PartialEq for Tak {
@@ -1854,5 +1943,92 @@ mod tests {
         assert_eq!(tensor[23 * 36 + 3 * 6 + 5], 19f32 / 30.0f32);
         assert_eq!(tensor[23 * 36 + 5 * 6 + 0], 19f32 / 30.0f32);
         assert_eq!(tensor[23 * 36 + 1 * 6 + 1], 19f32 / 30.0f32);
+    }
+
+    #[test]
+    fn test_to_hash() {
+        let hash = |tps: &str| Tak::from_tps(tps).unwrap().to_hash().0;
+        let hash_komi = |tps: &str, komi: u8| Tak::from_tps_with_komi(tps, komi).unwrap().to_hash().0;
+
+        // black at b1, b2; white at e2, f2
+        let base = "x6/x6/x6/x6/x,2,x2,1,1/x,2,x4 1 3";
+        let rotated = "x4,1,x/x4,1,x/x6/x6/x4,2,2/x6 1 3";          // 90 degrees counterclockwise
+        let mirror_x = "x6/x6/x6/x6/1,1,x2,2,x/x4,2,x 1 3";          // left <-> right
+        let mirror_y = "x,2,x4/x,2,x2,1,1/x6/x6/x6/x6 1 3";          // top <-> bottom
+        assert_eq!(hash(base), hash(rotated));
+        assert_eq!(hash(base), hash(mirror_x));
+        assert_eq!(hash(base), hash(mirror_y));
+
+        // all 8 symmetries of a busy position (tall stacks, walls, caps), built by moving stacks
+        let t = Tak::from_tps("x,2,x4/x,212S,2,1,x2/2,21C,21,1,1,1/2,x,2,x,1,1/2,1,22,1212C,121S,2/212S,x,1,1,x,1 1 30").unwrap();
+        for sym in 0..8 {
+            let mut u = t.clone();
+            for y in 0..N {
+                for x in 0..N {
+                    let sq = y * STRIDE + x;
+                    u.stacks[transform_sq(sq, sym)] = t.stacks[sq];
+                }
+            }
+            assert_eq!(u.to_hash().0, t.to_hash().0, "symmetry {sym}");
+        }
+
+        // different positions hash differently
+        assert_ne!(hash(base), hash("x6/x6/x6/x6/x,2,x2,1,x/x,2,x3,1 1 3"));   // f2 moved to f1
+        assert_ne!(hash(base), hash("x6/x6/x6/x6/x,2,x2,1,1S/x,2,x4 1 3"));    // f2 is a wall
+        assert_ne!(hash(base), hash("x6/x6/x6/x6/x,2,x2,1,12/x,2,x4 1 3"));    // f2 stack
+        assert_ne!(hash("x6/x6/x6/x6/x6/12,x5 1 3"), hash("x6/x6/x6/x6/x6/21,x5 1 3")); // stack order
+
+        // color swap: white to move == colors swapped with black to move, when komi is 0
+        let swapped = "x6/x6/x6/x6/x,1,x2,2,2/x,1,x4 2 3";
+        assert_eq!(hash(base), hash(swapped));
+        // ...but not with komi, black gets it in one and white in the other
+        assert_ne!(hash_komi(base, 2), hash_komi(swapped, 2));
+        // the same position with and without komi is a different game
+        assert_ne!(hash_komi(base, 2), hash_komi(base, 0));
+        // symmetries still match with komi
+        assert_eq!(hash_komi(base, 2), hash_komi(mirror_x, 2));
+        // same board, other side to move (no color swap) differs
+        assert_ne!(hash(base), hash("x6/x6/x6/x6/x,2,x2,1,1/x,2,x4 2 3"));
+
+        // opening: the same board on ply 1 (opponent's color placed) and later differs
+        assert_ne!(hash("x6/x6/x6/x6/x6/x5,2 1 1"), hash("x6/x6/x6/x6/x6/x5,2 1 2"));
+    }
+
+    #[test]
+    fn test_transform_move() {
+        // playing a move then transforming the board == transforming the board then playing the transformed move
+        let t = Tak::from_tps("x,2,x4/x,212S,2,1,x2/2,21C,21,1,1,1/2,x,2,x,1,1/2,1,22,1212C,121S,2/212S,x,1,1,x,1 1 30").unwrap();
+        let transform = |g: &Tak, sym: usize| {
+            let mut u = g.clone();
+            for y in 0..N {
+                for x in 0..N {
+                    let sq = y * STRIDE + x;
+                    u.stacks[transform_sq(sq, sym)] = g.stacks[sq];
+                }
+            }
+            for y in 0..N {
+                for x in 0..N {
+                    u.refresh_square(y * STRIDE + x);   // rebuild the top/wall/cap bitboards
+                }
+            }
+            u
+        };
+        let mut legal = Vec::new();
+        t.get_all_legal_moves(&mut legal);
+        for sym in 0..8 {
+            let ts = transform(&t, sym);
+            let mut ts_legal = Vec::new();
+            ts.get_all_legal_moves(&mut ts_legal);
+            assert_eq!(legal.len(), ts_legal.len());
+            for &mv in &legal {
+                let tmv = transform_move(mv, sym);
+                assert!(ts_legal.contains(&tmv), "sym {sym}: {} -> {} not legal", mv.to_ptn(), tmv.to_ptn());
+                let mut a = t.clone();
+                a.make_move(mv);
+                let mut b = ts.clone();
+                b.make_move(tmv);
+                assert!(transform(&a, sym).stacks == b.stacks, "sym {sym}: {}", mv.to_ptn());
+            }
+        }
     }
 }

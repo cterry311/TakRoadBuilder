@@ -6,7 +6,7 @@ build-backend = "maturin"
 bindings = "pyo3"
 
 [project]
-version = "1.1.1"
+version = "1.1.2"
 name = "tak_engine"
 requires-python = ">=3.9"
 dependencies = ["numpy"]

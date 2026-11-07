@@ -166,7 +166,8 @@ class Search:
     the preceding collect call. Do not reorder, filter or shuffle rows.
     """
 
-    def __init__(self, tps: str, urgency: float = -0.2, c_puct: float = 1.5, komi: int = 0) -> None:
+    def __init__(self, tps: str, urgency: float = -0.2, c_puct: float = 1.5, komi: int = 0,
+                 eval_cache: bool = True, cache_max_age: int = 2) -> None:
         """
         Args:
             tps: TPS string of the position to search from (the root).
@@ -180,6 +181,15 @@ class Search:
                 priors and few visits. Typical starting range is about 1 to 2.
             komi: flats added to black's count when the search scores flat
                 wins and encodes positions for the model.
+            eval_cache: Remember the model's policy and value for each position
+                evaluated, keyed by Tak's symmetry-invariant hash. A leaf that
+                matches a remembered position (another move order, or a
+                rotation / mirror of it) is expanded and backed up straight
+                from the cache during collect, so it never reaches the model.
+                Such leaves count toward sims() but not toward collect's
+                return value.
+            cache_max_age: Entries not used for more than this many
+                rebase_tree calls are dropped. Only matters with eval_cache.
         """
 
     def collect(self, buf: npt.NDArray[np.float32], max_leaves: int) -> int:
@@ -280,6 +290,12 @@ class Search:
         """ converts the tree to a json string
         """
 
+
+    def cache_stats(self) -> tuple[int, int, int]:
+        """(hits, misses, entries) for the eval cache, all 0 when it is off.
+
+        hits / (hits + misses) is the share of leaves that skipped the model.
+        """
 
     def rebase_tree(self, mv: int) -> None:
         """ change the root of the tree to a new node, keeping only that node's subtree
