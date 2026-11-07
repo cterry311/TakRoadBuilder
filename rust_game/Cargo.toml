@@ -14,6 +14,7 @@ rand = "0.10.3"
 pyo3 = { version = "0.30.1", features = ["abi3-py39"] } # so it works with any python version
 numpy = "0.30.0"
 rand_distr = "0.6.0"
+rayon = "1.10"
 
 [profile.release]
 opt-level = 3

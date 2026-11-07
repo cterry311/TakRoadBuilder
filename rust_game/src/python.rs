@@ -2,7 +2,7 @@
 use pyo3::prelude::*;
 use pyo3::exceptions::{PyValueError, PyRuntimeError};
 use crate::game::{Tak, Move, GameResult};
-use crate::tree::{Tree};
+use crate::tree::{Tree, collect_many, submit_many};
 
 use numpy::{PyReadwriteArrayDyn, PyArray1, PyArray3, PyArrayMethods, PyReadwriteArray1, PyReadonlyArray1};
 
@@ -241,8 +241,49 @@ pub fn index_to_ptn(index: usize) -> PyResult<String> {
 
 
 
-#[pyclass(unsendable)]            // unsendable avoids Send requirements; fine for single-threaded use
+#[pyclass]                        // Send, so collect_batch / submit_batch can hand trees to other threads
 pub struct Search { tree: Tree }
+
+/// `Search.collect` for many searches at once, run in parallel on all cores with the GIL released.
+/// Rows are packed in search order with no gaps. Returns the row count of each search.
+#[pyfunction]
+pub fn collect_batch(
+    py: Python<'_>,
+    mut searches: Vec<PyRefMut<'_, Search>>,
+    mut buf: PyReadwriteArray1<f32>,
+    max_leaves: usize,
+) -> PyResult<Vec<usize>> {
+    let slice = buf.as_slice_mut().map_err(|e| PyValueError::new_err(e.to_string()))?;
+    if slice.len() < searches.len() * max_leaves * INPUT_LEN {
+        return Err(PyValueError::new_err(format!(
+            "buffer too small: need {} rows for {} searches * {} leaves",
+            searches.len() * max_leaves, searches.len(), max_leaves)));
+    }
+    let mut trees: Vec<&mut Tree> = searches.iter_mut().map(|s| &mut s.tree).collect();
+    Ok(py.detach(|| collect_many(&mut trees, slice, max_leaves)))
+}
+
+/// `Search.submit` for many searches at once, run in parallel with the GIL released.
+/// `searches` must be the same list, in the same order, as the last `collect_batch`.
+#[pyfunction]
+pub fn submit_batch(
+    py: Python<'_>,
+    mut searches: Vec<PyRefMut<'_, Search>>,
+    policy: PyReadonlyArray1<f32>,
+    values: PyReadonlyArray1<f32>,
+) -> PyResult<()> {
+    let p = policy.as_slice().map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let v = values.as_slice().map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let n: usize = searches.iter().map(|s| s.tree.pending_len()).sum();
+    if p.len() != n * POLICY_LEN || v.len() != n {
+        return Err(PyValueError::new_err(format!(
+            "expected {n} rows (policy {} floats, values {n}), got policy {} and values {}",
+            n * POLICY_LEN, p.len(), v.len())));
+    }
+    let mut trees: Vec<&mut Tree> = searches.iter_mut().map(|s| &mut s.tree).collect();
+    py.detach(|| submit_many(&mut trees, p, v));
+    Ok(())
+}
 
 #[pymethods]
 impl Search {
@@ -296,5 +337,7 @@ impl Search {
 
     /// (hits, misses, entries) for the eval cache, all 0 when it is off.
     fn cache_stats(&self) -> (u64, u64, usize) { self.tree.cache_stats() }
+
+    
 }
 

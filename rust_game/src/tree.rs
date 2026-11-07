@@ -3,6 +3,8 @@ use rand_distr::{Distribution, Gamma};
 
 use std::collections::HashMap;
 
+use rayon::prelude::*;
+
 use crate::game::{Tak, Move, GameResult, transform_move};
 
 const POLICY_LEN: usize = 251 * 36;
@@ -374,6 +376,47 @@ fn terminal_value(g: &Tak) -> f32 {
         _ => 0.0,
     }
 }
+/// `Tree::collect` for many trees at once, one tree per rayon task.
+///
+/// Rows land in `buf` in tree order with no gaps: tree 0's leaves first, then
+/// tree 1's, and so on. Returns the number of rows each tree wrote.
+/// `buf` must hold at least `trees.len() * max_leaves` rows.
+pub fn collect_many(trees: &mut [&mut Tree], buf: &mut [f32], max_leaves: usize) -> Vec<usize> {
+    let stride = max_leaves * INPUT_LEN;
+    // each tree writes into its own fixed block, so the tasks never share memory
+    let counts: Vec<usize> = trees
+        .par_iter_mut()
+        .zip(buf.par_chunks_mut(stride))
+        .map(|(tree, block)| tree.collect(block, max_leaves))
+        .collect();
+    // close the gaps left by trees that wrote fewer than max_leaves rows
+    let mut dst = 0;
+    for (i, &n) in counts.iter().enumerate() {
+        let src = i * stride;
+        if src != dst {
+            buf.copy_within(src..src + n * INPUT_LEN, dst);
+        }
+        dst += n * INPUT_LEN;
+    }
+    counts
+}
+
+/// `Tree::submit` for many trees at once. Rows are in the order `collect_many`
+/// wrote them, so tree i's results follow those of trees 0..i.
+pub fn submit_many(trees: &mut [&mut Tree], policy: &[f32], values: &[f32]) {
+    let mut jobs = Vec::with_capacity(trees.len());
+    let (mut p, mut v) = (policy, values);
+    for tree in trees.iter_mut() {
+        let n = tree.pending_len();
+        let (tp, rest_p) = p.split_at(n * POLICY_LEN);
+        let (tv, rest_v) = v.split_at(n);
+        jobs.push((&mut **tree, tp, tv));
+        p = rest_p;
+        v = rest_v;
+    }
+    jobs.into_par_iter().for_each(|(tree, tp, tv)| tree.submit(tp, tv));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -523,5 +566,55 @@ mod tests {
         let mv = tree.best_move();
         tree.rebase_tree(mv).unwrap();
         assert_eq!(tree.cache_stats(), (0, 0, 0));
+    }
+
+    #[test]
+    fn parallel_matches_serial() {
+        // the same 6 searches run serially and with collect_many / submit_many must agree exactly
+        let tps = [
+            "x6/x6/x6/x6/x6/x6 1 1",
+            "x,2,x4/x,212S,2,1,x2/2,21C,21,1,1,1/2,x,2,x,1,1/2,1,22,1212C,121S,2/212S,x,1,1,x,1 1 30",
+            "2,x5/x6/x6/x6/x6/x5,1 1 2",
+        ];
+        let make = || -> Vec<Tree> {
+            (0..6).map(|i| {
+                let t = Tree::new(Tak::from_tps(tps[i % 3]).unwrap(), -0.2, 1.5);
+                if i % 2 == 0 { t.with_eval_cache(2) } else { t }
+            }).collect()
+        };
+        let leaves = 16;
+        let mut serial = make();
+        let mut parallel = make();
+        let mut buf_s = vec![0.0f32; leaves * INPUT_LEN];
+        let mut buf_p = vec![0.0f32; 6 * leaves * INPUT_LEN];
+
+        for round in 0..30 {
+            let mut rows_s = Vec::new();
+            let mut counts_s = Vec::new();
+            for t in serial.iter_mut() {
+                let n = t.collect(&mut buf_s, leaves);
+                rows_s.extend_from_slice(&buf_s[..n * INPUT_LEN]);
+                counts_s.push(n);
+            }
+            let mut refs: Vec<&mut Tree> = parallel.iter_mut().collect();
+            let counts_p = collect_many(&mut refs, &mut buf_p, leaves);
+            assert_eq!(counts_p, counts_s, "round {round}");
+            assert_eq!(&buf_p[..rows_s.len()], &rows_s[..], "round {round}");
+
+            let total: usize = counts_s.iter().sum();
+            let policy = fake_policy(total);
+            let values: Vec<f32> = (0..total).map(|i| ((i % 7) as f32 - 3.0) / 4.0).collect();
+            let mut off = 0;
+            for (t, &n) in serial.iter_mut().zip(&counts_s) {
+                t.submit(&policy[off * POLICY_LEN..(off + n) * POLICY_LEN], &values[off..off + n]);
+                off += n;
+            }
+            submit_many(&mut refs, &policy, &values);
+        }
+        for (s, p) in serial.iter().zip(&parallel) {
+            assert_eq!(s.sims(), p.sims());
+            assert_eq!(s.root_stats(), p.root_stats());
+            assert_eq!(s.cache_stats(), p.cache_stats());
+        }
     }
 }

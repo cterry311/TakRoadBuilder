@@ -152,6 +152,47 @@ def index_to_ptn(index: int) -> str:
 
 import numpy.typing as npt
 
+def collect_batch(searches: list[Search], buf: npt.NDArray[np.float32], max_leaves: int) -> list[int]:
+    """Search.collect for many searches at once, in parallel on all CPU cores.
+
+    The GIL is released while the trees are searched, so other Python threads
+    (e.g. one launching GPU work) keep running. The number of threads comes from
+    rayon's default (one per core), or the RAYON_NUM_THREADS environment
+    variable if it is set before the first call.
+
+    Rows are packed in search order with no gaps: searches[0]'s rows first, then
+    searches[1]'s, and so on. The result is the same as calling collect on each
+    search in turn and concatenating the rows.
+
+    Args:
+        searches: The searches to collect from. Each one may appear only once.
+        buf: 1D float32 C-contiguous CPU array, at least
+            len(searches) * max_leaves * 900 floats. The whole array is used as
+            scratch space, but only the first sum(counts) rows hold positions.
+        max_leaves: Maximum number of leaves to collect from each search.
+
+    Returns:
+        The number of rows each search wrote, in the same order as searches.
+
+    Raises:
+        ValueError: if buf is too small.
+        RuntimeError: if a search appears twice or is in use elsewhere.
+    """
+
+def submit_batch(searches: list[Search], policy: npt.NDArray[np.float32],
+                 values: npt.NDArray[np.float32]) -> None:
+    """Search.submit for many searches at once, in parallel, with the GIL released.
+
+    Args:
+        searches: The same list, in the same order, as the last collect_batch call.
+        policy: 1D float32 array of length sum(counts) * 9036, rows in the order
+            collect_batch wrote them.
+        values: 1D float32 array of length sum(counts).
+
+    Raises:
+        ValueError: if the lengths do not match the rows the searches are waiting for.
+    """
+
 class Search:
     """Batched PUCT Monte Carlo tree search from a single root position.
 
