@@ -246,7 +246,7 @@ def dense_targets(data, idx):
 # ---------------- settings ----------------
 SELF_PLAY_DB = "self_play_temp.db"
 SP_KOMI = 2
-MAX_SIMS = 5_000
+MAX_SIMS = 1_000
 N_PARALLEL = 64          # games played at the same time; their leaves share one GPU batch
 LEAVES_PER_GAME = 32     # leaves collected from each tree per round (was 256 from a single tree)
 C_PUCT = 1.5
@@ -255,9 +255,10 @@ ALPHA = 0.05
 EPS = 0.25
 TEMP_PLIES = 14
 MAX_PLY = 300
-NUM_GAMES = 150
+NUM_GAMES = 300
 EVAL_CACHE = True        # reuse model evals for repeated / symmetric positions within a game
 CACHE_MAX_AGE = 2        # drop cache entries unused for this many moves
+TEMP = 0.5
 
 
 def setup_db(db_path=SELF_PLAY_DB):
@@ -315,7 +316,7 @@ def unpack_visits(blob):
     return [(int(m), int(n)) for m, n in arr]          # back to a list of tuples
 
 
-def sample_move(visit_counts, seed: int, T=0.2):
+def sample_move(visit_counts, seed: int, T=TEMP):
     rng = np.random.default_rng(seed)
     moves = np.array([m for m, n in visit_counts])
     visits = np.array([n for m, n in visit_counts], dtype=np.float64)
@@ -587,18 +588,19 @@ def run_self_play(model_path, save_path):
 # ---------------- settings ----------------
 
 
-EPOCHS = 2
+EPOCHS = 3
 BATCH = 128
 LR = 3e-4                             # lower than supervised (guess, tune)
+DECAY = 3e-2
 W_V = 0.5                             # value cross-entropy on game outcome
-GAMMA = 0.05                          # value vs search q
+GAMMA = 0.5                          # value vs search q
 BETA = 0.0                            # advantage term; set 0 to disable
 ADV_CLIP = 1.0
 VAL_FRAC = 0.05
 ENCODER_VERSION = 2                   # must match what the data was generated with
 
-WINDOW_SIZE = 5                       # the size of the replay buffer, will use training examples from the past n generations of model
-N_GAMES_SAMPLED = 300                 # the number of games sampled from the window, or the size of the window if the window is not large enough to accomonate
+WINDOW_SIZE = 15                       # the size of the replay buffer, will use training examples from the past n generations of model
+N_GAMES_SAMPLED = 1000                 # the number of games sampled from the window, or the size of the window if the window is not large enough to accomonate
 
 # ---------------- augmentation (copied from supervised file) ----------------
 DIRS = [(1, 0), (-1, 0), (0, -1), (0, 1)]          # engine order + - < >
@@ -689,13 +691,13 @@ def get_batch(data, idx):
 def collect_training_examples(version, db_path):
     """Build a training database at db_path from up to N_GAMES_SAMPLED games, sampled
     uniformly from the last WINDOW_SIZE self-play databases of this model version."""
-    os.makedirs("/content/temp_dbs", exist_ok=True)
+    os.makedirs("temp_dbs", exist_ok=True)
     cons = {}
     for i in range(WINDOW_SIZE):
-        src = f"/content/drive/MyDrive/capstone/records/records_{version[0]}_{version[1] - i}.db"
+        src = f"self_play_records/records_{version[0]}_{version[1] - i}.db"
         if os.path.exists(src):
-            shutil.copy2(src, f"/content/temp_dbs/{i}.db")
-            cons[i] = sqlite3.connect(f"/content/temp_dbs/{i}.db")
+            shutil.copy2(src, f"temp_dbs/{i}.db")
+            cons[i] = sqlite3.connect(f"temp_dbs/{i}.db")
 
     # every (db index, game id) in the window, then a uniform sample of them
     all_games = []
@@ -728,7 +730,7 @@ def run_training(LOAD_PATH, SAVE_PATH, version):
     torch.backends.cudnn.benchmark = True       # batch shape is fixed, so the autotuning pays off
     print("training on", device)
 
-    db_path = "/content/temp_training.db"
+    db_path = "temp_training.db"
     collect_training_examples(version, db_path)
 
     train_ids, val_ids = split_game_ids(db_path, VAL_FRAC)
@@ -741,12 +743,14 @@ def run_training(LOAD_PATH, SAVE_PATH, version):
     assert train_meta["encoder_version"] == ENCODER_VERSION, "encoder version mismatch"
     n_train, n_val = train_meta["n_positions"], val_meta["n_positions"]
 
-    info = torch.load(f"/content/drive/MyDrive/capstone/models/{LOAD_PATH}", map_location=device)
+    info = torch.load(f"model_checkpoints/{LOAD_PATH}", map_location=device)
     params = info["params"]
     model = TakNet(**params)
     model.load_state_dict(info["weights"])
     model.to(device, memory_format=torch.channels_last)    # faster convs on tensor-core GPUs
-    optimizer = torch.optim.Adam(model.parameters(), lr=LR)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=DECAY)
+    if 'opt' in info:
+        optimizer.load_state_dict(info['opt'])
     scaler = torch.amp.GradScaler(device.type, enabled=use_amp)
 
     perms = [p.to(device) for p in build_perms()]
@@ -801,9 +805,236 @@ def run_training(LOAD_PATH, SAVE_PATH, version):
         if score < best:
             best = score
             torch.save({"params": params, "weights": model.state_dict(),
-                        "komi": komi, "encoder_version": ENCODER_VERSION},
-                        f"/content/drive/MyDrive/capstone/models/{SAVE_PATH}")
+                        "komi": komi, "encoder_version": ENCODER_VERSION,
+                        "opt": optimizer.state_dict()},
+                        f"model_checkpoints/{SAVE_PATH}")
             print("saved best")
+
+
+
+
+
+
+
+#
+#
+# # Gate Model
+#
+# N_GATE_GAMES = 100
+# GATE_KOMI = 2
+# GATE_MAX_SIMS = 5_000
+# GATE_N_PARALLEL = 64          # games played at the same time; their leaves share one GPU batch
+# GATE_LEAVES_PER_GAME = 32     # leaves collected from each tree per round (was 256 from a single tree)
+# GATE_C_PUCT = 1.5
+# GATE_URGENCY = -0.2
+# GATE_ALPHA = 0.05
+# GATE_EPS = 0.25
+# GATE_EVAL_CACHE = True        # reuse model evals for repeated / symmetric positions within a game
+# GATE_CACHE_MAX_AGE = 2        # drop cache entries unused for this many moves
+#
+#
+# class GateRunner:
+#     """Plays many games at once and batches every game's leaves into one model call.
+#
+#     Speedups over playing one game at a time:
+#       * GPU batches are large (up to N_PARALLEL * LEAVES_PER_GAME / 2 rows) and
+#         full, instead of whatever was left of 256 after duplicate leaves were dropped.
+#       * Games are split into two groups. While the GPU evaluates one group, the
+#         CPU (Rust collect/submit) works on the other.
+#       * collect_batch / submit_batch search every tree in a group in parallel,
+#         one tree per CPU core, with the GIL released.
+#       * The forward pass runs in float16 autocast with channels_last, and transfers
+#         use pinned memory so they can overlap with other work.
+#     """
+#     def __init__(self, model_path_1, model_path_2, komi, max_sims, n_parallel, leaves_per_game,
+#                  c_puct, urgency, alpha, eps):
+#         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#         self.cuda = self.device.type == "cuda"
+#
+#         info = torch.load(model_path_1, map_location=self.device)
+#         self.model_1 = TakNet(**info["params"])
+#         self.model_1.load_state_dict(info["weights"])
+#         self.model_1.to(self.device).eval()  # eval() matters: BatchNorm must not use batch stats
+#         # channels_last makes the convs about 1.5x faster on tensor-core GPUs
+#         self.model_1.to(memory_format=torch.channels_last)
+#
+#         info = torch.load(model_path_2, map_location=self.device)
+#         self.model_2 = TakNet(**info["params"])
+#         self.model_2.load_state_dict(info["weights"])
+#         self.model_2.to(self.device).eval()  # eval() matters: BatchNorm must not use batch stats
+#         # channels_last makes the convs about 1.5x faster on tensor-core GPUs
+#         self.model_2.to(memory_format=torch.channels_last)
+#
+#         self.model_path_1 = model_path_1
+#         self.model_path_2 = model_path_2
+#
+#         self.komi = komi
+#         self.max_sims = max_sims
+#         self.n_parallel = n_parallel
+#         self.leaves = leaves_per_game
+#         self.c_puct = c_puct
+#         self.urgency = urgency
+#         self.alpha = alpha
+#         self.eps = eps
+#
+#
+#         per_group = (n_parallel + 1) // 2
+#         self.groups = [Group(per_group * leaves_per_game, self.cuda) for _ in range(2)]
+#         self.per_group = per_group
+#
+#     # ---- per game per model ----
+#     def new_search(self, slot):
+#         slot.search = tak_engine.Search(slot.game.to_tps(), urgency=self.urgency,
+#                                         c_puct=self.c_puct, komi=self.komi,
+#                                         eval_cache=GATE_EVAL_CACHE, cache_max_age=GATE_CACHE_MAX_AGE)
+#         slot.noised = False
+#
+#     def add_noise(self, slot):
+#         """Noise goes on the root's children, so the root must already be expanded."""
+#         slot.search.add_noise(self.alpha, self.eps, slot.seed + slot.ply)
+#         slot.noised = True
+#
+#     def play_move(self, slot, game):
+#         """Search is done: pick and play a move. Returns an end reason, or None if the game goes on.
+#
+#         When the game goes on, the search is rebased onto the move played, so the
+#         visits already spent below that move carry over to the next search.
+#         """
+#         s = slot.search
+#         visit_counts = [(x[0], x[1]) for x in s.root_stats()]
+#         mv = max(visit_counts, key=lambda x: x[1])[0]
+#         slot.records.append((slot.game.to_tps(), slot.ply, mv, visit_counts, s.root_q()))
+#         slot.game.make_move_raw(mv)
+#         game.make_move_raw(mv)
+#         slot.ply += 1
+#         if slot.game.result() != 0:
+#             return 'game_over'
+#         s.rebase_tree(mv)
+#         slot.noised = False
+#         if s.sims() > 0:          # new root was already expanded: noise can go on right away
+#             self.add_noise(slot)
+#         return None
+#
+#     # ---- per group ----
+#     def collect(self, group):
+#         """CPU: every game in the group descends its tree and writes leaves into the group's buffer.
+#
+#         The trees are searched in parallel in Rust; rows come back packed in slot order.
+#         """
+#         group.spans = []
+#         if group.slots:
+#             counts = tak_engine.collect_batch([slot.search for slot in group.slots],
+#                                               group.inputs_flat, self.leaves)
+#             off = 0
+#             for slot, n in zip(group.slots, counts):
+#                 group.spans.append((slot, off, n))
+#                 off += n
+#         group.collected = bool(group.spans)
+#         return sum(n for _, _, n in group.spans)
+#
+#     @torch.no_grad()
+#     def launch(self, group, n):
+#         """GPU: queue the model call for n rows. Returns without waiting for the result."""
+#         x = group.inputs[:n].to(self.device, non_blocking=True).contiguous(memory_format=torch.channels_last)
+#         with torch.autocast(device_type=self.device.type, dtype=torch.float16, enabled=self.cuda):
+#             policy, value = self.model(x)
+#         pol = torch.softmax(policy.float().flatten(1), dim=1)
+#         vp = torch.softmax(value.float(), dim=1)
+#         group.policy[:n].copy_(pol, non_blocking=True)
+#         group.values[:n].copy_(vp[:, 2] - vp[:, 0], non_blocking=True)
+#         if self.cuda:
+#             group.event = torch.cuda.Event()
+#             group.event.record()
+#
+#     def finish(self, group, start_game, write_game):
+#         """Wait for the group's results, hand them to each search, and advance finished searches."""
+#         if not group.collected:
+#             return
+#         if group.event is not None:
+#             group.event.synchronize()
+#             group.event = None
+#         total = sum(n for _, _, n in group.spans)
+#         tak_engine.submit_batch([slot.search for slot, _, _ in group.spans],
+#                                 group.policy_flat[:total * POLICY_LEN], group.values_np[:total])
+#         kept = []
+#         for slot, off, n in group.spans:
+#             s = slot.search
+#             if not slot.noised and s.sims() > 0:   # first submit at this root expanded it
+#                 self.add_noise(slot)
+#             if s.sims() >= self.max_sims:
+#                 end_reason = self.play_move(slot)
+#                 if end_reason is not None:
+#                     write_game(slot, end_reason)
+#                     slot = start_game()
+#                     if slot is None:
+#                         continue
+#             kept.append(slot)
+#         group.slots = kept
+#         group.spans = []
+#         group.collected = False
+#
+#     def run(self, num_games, conn, save_path):
+#         rand = np.random.default_rng()
+#         started = 0
+#         finished = 0
+#
+#         def start_game():
+#             nonlocal started
+#             if started >= num_games:
+#                 return None
+#             started += 1
+#             slot = Slot(self.komi, int(rand.integers(0, 1 << 63)))
+#             self.new_search(slot)
+#             return slot
+#
+#         def write_game(slot, end_reason):
+#             nonlocal finished
+#             game_id = conn.execute('''
+#                 INSERT INTO self_play_games (
+#                     seed, model, encoder_version, komi, max_sims, batch_size, c_puct,
+#                     urgency, alpha, eps, temp_plies, n_plies, outcome, end_reason
+#                 )
+#                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+#             ''', (
+#                 slot.seed, self.model_path, ENCODER_VERSION, self.komi, self.max_sims, self.leaves,
+#                 self.c_puct, self.urgency, self.alpha, self.eps, self.temp_plies,
+#                 slot.ply, slot.game.result(), end_reason
+#             )).lastrowid
+#             # record = (tps, ply, mv, visit_counts, q)
+#             conn.executemany('''
+#                 INSERT INTO self_play_positions (game_id, ply, tps, move_raw, sampled, q, visits)
+#                 VALUES (?, ?, ?, ?, ?, ?, ?)
+#             ''', [
+#                 (game_id, ply, tps, mv, 1 if ply < self.temp_plies else 0, q, pack_visits(visits))
+#                 for tps, ply, mv, visits, q in slot.records
+#             ])
+#             conn.commit()
+#             finished += 1
+#             print(f'Game {game_id} written to database ({slot.ply} plies, {end_reason}).')
+#             if finished % 10 == 0:
+#                 copy_db(conn, f'self_play_records/{save_path}')
+#
+#         for i in range(self.n_parallel):
+#             slot = start_game()
+#             if slot is None:
+#                 break
+#             self.groups[i % 2].slots.append(slot)
+#
+#         # pipeline: collect A, launch A, finish B, collect B, launch B, finish A, ...
+#         # the GPU works on one group while the CPU finishes and collects the other
+#         while any(g.slots or g.collected for g in self.groups):
+#             for g, other in ((0, 1), (1, 0)):
+#                 group = self.groups[g]
+#                 n = self.collect(group)
+#                 if n:
+#                     self.launch(group, n)
+#                 self.finish(self.groups[other], start_game, write_game)
+#
+#         copy_db(conn, f'self_play_records/{save_path}')
+#
+# def gate_model(base_version, new_version):
+#     pass
+#
 
 
 
@@ -819,8 +1050,8 @@ def run_training(LOAD_PATH, SAVE_PATH, version):
 # iterate between self play and training, save checkpoints to drive periodically
 
 # set these to the newest model on drive before (re)starting the loop
-model_version = 11
-model_sub_version = 1
+model_version = 13
+model_sub_version = 10
 while True:
     model_path = f'version_{model_version}_{model_sub_version}.pt'
     model_save_path = f'version_{model_version}_{model_sub_version + 1}.pt'
@@ -828,6 +1059,6 @@ while True:
     db_path = f'records_{model_version}_{model_sub_version}.db'
 
     run_self_play(model_path, db_path)
-    run_training(model_path, model_save_path)
+    run_training(model_path, model_save_path, (model_version, model_sub_version))
     model_sub_version += 1
 

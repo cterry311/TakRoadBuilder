@@ -124,3 +124,31 @@ def run_self_games(model1, model2, num_positions, c_puct, urgency, num_games, ko
 # wins: 12, losses: 80, draws: 8
 # total games: 100
 
+
+# print('self games, model 11_25 vs 9_34')
+# run_self_games('model_checkpoints/version_11_25.pt', 'model_checkpoints/version_9_34.pt', 5_000, 1.5, -0.2, 100, 2, save_games=True)
+# wins: 26, losses: 49, draws: 25
+# total games: 100
+
+
+
+# print('self games, model 11_10 vs 9_34')
+# run_self_games('model_checkpoints/version_11_10.pt', 'model_checkpoints/version_9_34.pt', 5_000, 1.5, -0.2, 100, 2, save_games=True)
+# wins: 35, losses: 52, draws: 13
+# total games: 100
+
+
+# print('self games, model 12_10 vs 9_34')
+# run_self_games('model_checkpoints/version_12_10.pt', 'model_checkpoints/version_9_34.pt', 5_000, 1.5, -0.2, 100, 2, save_games=True)
+# wins: 32, losses: 51, draws: 17
+# total games: 100
+
+
+# print('self games, model 13_5 vs 9_34')
+# run_self_games('model_checkpoints/version_13_5.pt', 'model_checkpoints/version_9_34.pt', 5_000, 1.5, -0.2, 100, 2, save_games=True)
+# wins: 34, losses: 50, draws: 16
+# total games: 100
+
+
+print('self games, model 13_0 vs 9_34')
+run_self_games('model_checkpoints/version_13_0.pt', 'model_checkpoints/version_9_34.pt', 5_000, 1.5, -0.2, 100, 2, save_games=True)

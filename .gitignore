@@ -10,3 +10,7 @@
 psudo.txt
 /self_play_records
 self_play_temp.db
+temp_training.db
+PLAYTAK_BOT_PROTOCOL.md
+.env
+TAK_BOT_PORT.md
