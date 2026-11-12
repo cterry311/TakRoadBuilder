@@ -4,19 +4,32 @@ import tak_engine
 import playtak_connection.parsing as parsing
 import os
 from dotenv import load_dotenv
+import queue
+from abc import ABC, abstractmethod
+
 
 load_dotenv()
 
 HOST, PORT = "playtak.com", 10000
 sock = socket.create_connection((HOST, PORT))
-f = sock.makefile("rw", encoding="utf-8", newline="\n")
+f_write = sock.makefile("rw", encoding="utf-8", newline="\n")
 lock = threading.Lock()
+lines = queue.Queue()
+
+def reader():
+    f_read = sock.makefile("r", encoding="utf-8", newline="\n")
+    while True:
+        line = f_read.readline()
+        if not line:
+            break
+        lines.put(line.strip())
+
 
 def send(line):
     with lock:
         print(">", line)
-        f.write(line + "\n")
-        f.flush()
+        f_write.write(line + "\n")
+        f_write.flush()
 
 def pinger():
     while True:
@@ -24,27 +37,202 @@ def pinger():
         send("PING")
 
 
-class PlayTakGame:
+threading.Thread(target=pinger, daemon=True).start()
+threading.Thread(target=reader, daemon=True).start()
 
-    def __init__(self, game_no, my_color, total_time, time_increment, half_komi):
+
+class EventHandler(ABC):
+    @abstractmethod
+    def handle_event(self, line: str):
+        print("<", line)
+
+    @abstractmethod
+    def run_idle(self) -> EventHandler:
+        pass
+
+class LoginEventHandler(EventHandler):
+    def __init__(self, user, password, future_handler: EventHandler):
+        self.user = user
+        self.password = password
+        self.logged_in = False
+        self.future_handler = future_handler
+
+    def handle_event(self, line):
+        super().handle_event(line)
+        if line.startswith("Login or Register"):
+            send(f"Login {self.user} {self.password}")
+        elif line.startswith(f"Welcome {self.user}"):
+            self.logged_in = True
+
+    def run_idle(self):
+        if self.logged_in:
+            return self.future_handler
+        else:
+            return self
+
+class SeekEventHandler(EventHandler):
+    def __init__(self, start_time, increment, komi, color, unrated):
+        self.start_time = start_time
+        self.increment = increment
+        self.komi = komi
+        self.color = color
+        self.unrated = unrated
+        self.game_no = None
+        self.game_color = None
+        self.sent_seek = False
+
+    def clone(self):
+        return SeekEventHandler(self.start_time, self.increment, self.komi, self.color, self.unrated)
+
+    def handle_event(self, line):
+        super().handle_event(line)
+        if line.startswith("Game Start"):
+            self.game_no = int(line.split(" ")[2])
+            self.game_color = line.split(" ")[7]
+
+    def run_idle(self):
+        if self.game_no is None:
+            if not self.sent_seek:
+                send(f"Seek {6} {self.start_time} {self.increment} {self.color} {int(self.komi * 2)} {30} {1} {self.unrated} {0} ")  # Seek <size> <time> <increment> <color> <half_komi> <flats> <capstones> <unrated> <tournament?> # note, trailing space is important!!!
+                self.sent_seek = True
+            return self
+        else:
+            return GameEventHandler(self.game_no, self.game_color, self.start_time, self.increment, self.komi, future_handler=self.clone())
+
+
+class AcceptEventHandler(EventHandler):
+    def __init__(self, challenger_name):
+        self.challenger_name = challenger_name
+        self.sent_accept = False
+        self.game_no = None
+        self.game_color = None
+        self.game_settings = {}
+
+    def handle_event(self, line):
+        super().handle_event(line)
+        if line.startswith("Seek new "):
+            name = line.split(" ")[3]
+            if name == self.challenger_name:
+                send(f"Accept {int(line.split(' ')[2])}")
+                self.sent_accept = True
+                self.game_settings = {
+                    'total_time': int(line.split(' ')[5]),
+                    'time_increment': int(line.split(' ')[6]),
+                    'komi': int(int(line.split(' ')[8]) // 2),
+                }
+        if line.startswith("Game Start"):
+            self.game_no = int(line.split(" ")[2])
+            self.game_color = line.split(" ")[7]
+
+    def clone(self):
+        return AcceptEventHandler(self.challenger_name)
+
+    def run_idle(self):
+        if self.game_no is None:
+            return self
+        else:
+            return GameEventHandler(self.game_no, self.game_color, **self.game_settings, future_handler=self.clone())
+
+
+
+
+class GameEventHandler(EventHandler):
+
+    def __init__(self, game_no, my_color, total_time, time_increment, komi, future_handler: EventHandler = None):
         # Seek <size> <time> <increment> <color> <half_komi> <flats> <capstones> <unrated> <tournament?>
-        self.game = tak_engine.Tak(komi=half_komi)
+        self.game = tak_engine.Tak(komi=komi)
         self.time_increment = time_increment
-        self.total_time = total_time
+        self.current_time = total_time
         self.color = my_color
         self.game_no = game_no
+        self.engine = RoadBuilder('model_checkpoints/version_9_34.pt')
+        self.current_q: float| None = None
+        self.game_over = False
+        self.future_handler = future_handler
         if my_color == "white":
             self.send_move()
 
+
     def send_move(self):
-        pass
+        time_to_move = self.time_increment
+        if self.current_q is None:
+            pass
+        elif self.current_q < -0.9:
+            time_to_move = self.time_increment * 2
+        elif self.current_q < -0.7:
+            time_to_move = self.time_increment * 2.5
+        elif self.current_q < -0.5:
+            time_to_move = self.time_increment * 3
+        elif self.current_q < -0.3:
+            time_to_move = self.time_increment * 4
+        elif self.current_q < -0.1:
+            time_to_move = self.time_increment * 3
+        elif self.current_q < 0.1:
+            time_to_move = self.time_increment * 2
+        elif self.current_q < 0.3:
+            time_to_move = self.time_increment * 1.5
+        elif self.current_q < 0.5:
+            time_to_move = self.time_increment * 0.8
+        elif self.current_q < 0.8:
+            time_to_move = self.time_increment * 0.5
+
+        if self.current_time - time_to_move <= 0:
+            time_to_move = self.current_time - 5
+            if time_to_move <= 0:
+                time_to_move = self.current_time - 2
+            if time_to_move <= 0:
+                time_to_move = self.current_time - 1
+            if time_to_move <= 0:
+                time_to_move = 0.2
+
+        best_move, _, _, q = self.engine.best_move(self.game.to_tps(), time_limit=time_to_move * 1000)
+        self.current_q = q
+        self.game.make_move(best_move)
+        server_move = parsing.ptn_to_server(best_move)
+        send(f"Game#{self.game_no} {server_move}")
+
+    def handle_event(self, line: str):
+        super().handle_event(line)
+        if line.startswith(f"Game#{self.game_no}"):
+            sent_type = line.split(" ")[1]
+            rest = line[len(f"Game#{self.game_no} "):]
+            if sent_type in ['P', 'M']:
+                ptn_move = parsing.server_to_ptn(rest)
+                self.game.make_move(ptn_move)
+                self.send_move()
+            elif sent_type == "Time":
+                self.current_time = int(line.split(" ")[2])
+            elif sent_type == "Over":
+                self.game_over = True
+
+
+    def run_idle(self):
+        if self.game_over:
+            return self.future_handler
+        else:
+            return self
+
+seek_action = SeekEventHandler(600, 20, 2, "A", 0)
+handler: EventHandler | None = LoginEventHandler(os.getenv('PLAYTAK_USERNAME'), os.getenv('PASSWORD'), seek_action.clone())
+while True:
+
+    handler = handler.run_idle()
+
+    if handler is None:
+        break
+
+    while True:
+        try:
+            line = lines.get_nowait()
+            handler.handle_event(line)
+        except queue.Empty:
+            break
 
 
 
 
 
-threading.Thread(target=pinger, daemon=True).start()
-
+'''
 game_no = None
 my_color = None
 
@@ -138,3 +326,5 @@ for raw in f:                       # iterates line by line; ends at EOF
 # < OK
 # < Game#881153 Over 1-0
 # Game over: Over 1-0
+
+'''

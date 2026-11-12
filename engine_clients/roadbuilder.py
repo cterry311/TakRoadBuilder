@@ -118,3 +118,110 @@ class RoadBuilder:
                 s.add_noise(alpha, eps, seed)
             i += 1
         return tak_engine.Tak.raw_to_ptn(s.best_move_raw()), s.root_stats(), s.sims(), s.root_q()
+
+
+class RoadBuilderGame:
+    def __init__(
+            self,
+            model_path,
+            batch_size=256,
+            c_puct=1.5,
+            urgency=-0.2,
+            alpha=0.1,
+            eps=0.25,
+            eval_cache=True,
+            cache_max_age=2,
+            komi=2
+        ):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        info = torch.load(model_path, map_location=self.device)
+        self.model = TakNet(**info["params"])
+        self.model.load_state_dict(info["weights"])
+        self.model.to(self.device).eval()  # eval() matters: BatchNorm must not use batch stats
+
+        self.BATCH = batch_size
+        self.buf = np.zeros((self.BATCH, 25, 6, 6), dtype=np.float32)
+        self.flat = self.buf.reshape(-1)  # a view onto buf; Rust writes through it
+
+        # warm up CUDA so the first real move doesn't pay kernel setup time
+        with torch.no_grad():
+            self.model(torch.zeros(self.BATCH, 25, 6, 6, device=self.device))
+
+        self.c_puct = c_puct
+        self.urgency = urgency
+        self.komi = komi
+
+        self.game = tak_engine.Tak(komi=komi)
+        self.tree = tak_engine.Search(self.game.to_tps(), urgency=urgency, c_puct=c_puct, komi=komi, eval_cache=eval_cache, cache_max_age=cache_max_age)
+        self.root_noised = False
+
+        self.alpha = alpha
+        self.eps = eps
+
+    def make_move(self, move):
+        self.game.make_move(move)
+        try:
+            self.tree.rebase_tree(move)
+        except ValueError as e:
+            self.tree = tak_engine.Search(self.game.to_tps(), urgency=self.urgency, c_puct=self.c_puct, komi=self.komi, eval_cache=True, cache_max_age=2)
+
+    def best_move(self, max_sims=None, time_limit=None):
+        seed = int(time.time() * 1000)
+        if max_sims is None and time_limit is None:
+            raise ValueError("Either max_sims or time_limit must be specified")
+        if time_limit is not None:
+            time_limit = time_limit / 1000.0
+        if max_sims is not None:
+            max_sims = max_sims // 2
+        start = time.perf_counter()
+        i = 0
+        while True:
+            if max_sims is not None and self.tree.sims() >= max_sims:
+                break
+            if time_limit is not None and time.perf_counter() - start >= time_limit:
+                break
+
+            n = self.tree.collect(self.flat, self.BATCH)
+            if n == 0:  # every descent hit a finished game; already backed up
+                continue
+
+            x = torch.from_numpy(self.buf[:n]).to(self.device)
+            policy, value = self.model(x)
+
+            pol = torch.softmax(policy.flatten(1), dim=1).cpu().numpy().reshape(-1)
+            vp = torch.softmax(value, dim=1)
+            val = (vp[:, 2] - vp[:, 0]).cpu().numpy()
+
+            self.tree.submit(pol, val)  # row i here must be row i of buf
+            if i == 0:
+                self.tree.add_noise(self.alpha, self.eps, seed)
+            i += 1
+        return tak_engine.Tak.raw_to_ptn(self.tree.best_move_raw()), self.tree.root_stats(), self.tree.sims(), self.tree.root_q()
+
+    def bake_tree(self, max_sims=None, time_limit=None):
+        if max_sims is None and time_limit is None:
+            raise ValueError("Either max_sims or time_limit must be specified")
+        if time_limit is not None:
+            time_limit = time_limit / 1000.0
+        if max_sims is not None:
+            max_sims = max_sims // 2
+        start = time.perf_counter()
+        while True:
+            if max_sims is not None and self.tree.sims() >= max_sims:
+                break
+            if time_limit is not None and time.perf_counter() - start >= time_limit:
+                break
+
+            n = self.tree.collect(self.flat, self.BATCH)
+            if n == 0:  # every descent hit a finished game; already backed up
+                continue
+
+            x = torch.from_numpy(self.buf[:n]).to(self.device)
+            policy, value = self.model(x)
+
+            pol = torch.softmax(policy.flatten(1), dim=1).cpu().numpy().reshape(-1)
+            vp = torch.softmax(value, dim=1)
+            val = (vp[:, 2] - vp[:, 0]).cpu().numpy()
+
+            self.tree.submit(pol, val)  # row i here must be row i of buf
