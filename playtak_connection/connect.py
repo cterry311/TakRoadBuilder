@@ -1,5 +1,5 @@
 import socket, threading, time
-from engine_clients.roadbuilder import RoadBuilder
+from engine_clients.roadbuilder import RoadBuilderGame
 import tak_engine
 import playtak_connection.parsing as parsing
 import os
@@ -145,7 +145,7 @@ class GameEventHandler(EventHandler):
         self.current_time = total_time
         self.color = my_color
         self.game_no = game_no
-        self.engine = RoadBuilder('model_checkpoints/version_9_34.pt')
+        self.engine = RoadBuilderGame('model_checkpoints/version_9_34.pt')
         self.current_q: float| None = None
         self.game_over = False
         self.future_handler = future_handler
@@ -185,7 +185,8 @@ class GameEventHandler(EventHandler):
             if time_to_move <= 0:
                 time_to_move = 0.2
 
-        best_move, _, _, q = self.engine.best_move(self.game.to_tps(), time_limit=time_to_move * 1000)
+        best_move, _, _, q = self.engine.best_move(time_limit=int(time_to_move * 1000))
+        self.engine.make_move(best_move)
         self.current_q = q
         self.game.make_move(best_move)
         server_move = parsing.ptn_to_server(best_move)
@@ -199,6 +200,7 @@ class GameEventHandler(EventHandler):
             if sent_type in ['P', 'M']:
                 ptn_move = parsing.server_to_ptn(rest)
                 self.game.make_move(ptn_move)
+                self.engine.make_move(ptn_move)
                 self.send_move()
             elif sent_type == "Time":
                 self.current_time = int(line.split(" ")[2])
@@ -210,6 +212,7 @@ class GameEventHandler(EventHandler):
         if self.game_over:
             return self.future_handler
         else:
+            self.engine.bake_tree(time_limit=500)
             return self
 
 seek_action = SeekEventHandler(600, 20, 2, "A", 0)

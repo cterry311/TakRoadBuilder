@@ -162,11 +162,11 @@ class RoadBuilderGame:
     def make_move(self, move):
         self.game.make_move(move)
         try:
-            self.tree.rebase_tree(move)
+            self.tree.rebase_tree(tak_engine.Tak.ptn_to_raw(move))
         except ValueError as e:
             self.tree = tak_engine.Search(self.game.to_tps(), urgency=self.urgency, c_puct=self.c_puct, komi=self.komi, eval_cache=True, cache_max_age=2)
 
-    def best_move(self, max_sims=None, time_limit=None):
+    def best_move(self, max_sims: int | None =None, time_limit: int | None =None):
         seed = int(time.time() * 1000)
         if max_sims is None and time_limit is None:
             raise ValueError("Either max_sims or time_limit must be specified")
