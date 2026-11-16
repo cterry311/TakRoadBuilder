@@ -4,6 +4,9 @@ import torch
 import tak_engine
 from model.tak_net import TakNet
 import time
+import sys
+import threading
+import queue
 '''
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -165,7 +168,7 @@ class RoadBuilderGame:
             self.tree.rebase_tree(tak_engine.Tak.ptn_to_raw(move))
         except ValueError as e:
             self.tree = tak_engine.Search(self.game.to_tps(), urgency=self.urgency, c_puct=self.c_puct, komi=self.komi, eval_cache=True, cache_max_age=2)
-
+    @torch.no_grad()
     def best_move(self, max_sims: int | None =None, time_limit: int | None =None):
         seed = int(time.time() * 1000)
         if max_sims is None and time_limit is None:
@@ -198,7 +201,7 @@ class RoadBuilderGame:
                 self.tree.add_noise(self.alpha, self.eps, seed)
             i += 1
         return tak_engine.Tak.raw_to_ptn(self.tree.best_move_raw()), self.tree.root_stats(), self.tree.sims(), self.tree.root_q()
-
+    @torch.no_grad()
     def bake_tree(self, max_sims=None, time_limit=None):
         if max_sims is None and time_limit is None:
             raise ValueError("Either max_sims or time_limit must be specified")
@@ -225,3 +228,95 @@ class RoadBuilderGame:
             val = (vp[:, 2] - vp[:, 0]).cpu().numpy()
 
             self.tree.submit(pol, val)  # row i here must be row i of buf
+
+
+
+
+def run_tei(get_lines=None, send=None):
+
+    if get_lines is None:
+        def get_lines():
+            for line in sys.stdin:
+                yield line
+
+    lines = queue.Queue()
+
+    def reader():
+        for line in get_lines():  # blocks until a line arrives
+            lines.put(line.strip())
+        lines.put(None)  # sentinel: stdin closed (GUI quit/died)
+
+    threading.Thread(target=reader, daemon=True).start()
+    if send is None:
+        def send(line):
+            print(line, flush=True)
+
+    state = {}
+
+    while True:
+        line: str = lines.get()
+        line = line.strip()
+        if line is None:
+            break
+        elif line == 'tei':
+            if state != {}:
+                raise ValueError("Already in tei state")
+            send('id name RoadBuilder')
+            send('id author Cason Terry')
+            # options go here
+            send('teiok')
+            state['tei'] = True
+        elif 'tei' not in state or not state['tei']:
+            pass # the CLI is not in a tei state, ignore all commands that are not tei
+        elif line == 'isready':
+            # assert that the model is ready to go, run a test batch
+            send('readyok')
+        elif line.startswith('teinewgame'):
+            size = int(line.split(' ')[1])
+            if size != 6:
+                raise ValueError("Only 6x6 is supported")
+            state['ingame'] = True
+            state['engine'] = RoadBuilder(model_path="model_checkpoints/version_13_60.pt")
+        elif line.startswith('position '):
+            if 'ingame' not in state or not state['ingame']:
+                raise ValueError("Not in a game")
+            parts = line.split(' ')
+            moves_index = 2
+            if parts[1] == 'startpos':
+                state['position'] = tak_engine.Tak(komi=2)
+            elif parts[1] == 'tps':
+                state['position'] = tak_engine.Tak.from_tps(parts[2], komi=2)
+                moves_index = 3
+            else:
+                raise ValueError("expected 'startpos' or 'tps'")
+            if len(parts) <= moves_index:
+                pass # no moves from the position are specified
+            elif parts[moves_index] == 'moves':
+                moves = parts[moves_index + 1:]
+                for move in moves:
+                    state['position'].make_move(move)
+            else:
+                raise ValueError(f"unexpected token '{parts[moves_index]}'")
+        elif line.startswith('go'):
+            if 'position' not in state or not state['position']:
+                raise ValueError("No position specified")
+            parts = line.split(' ')
+            if parts[1] == 'movetime':
+                best_move = state['engine'].best_move(tps=state['position'].to_tps(), time_limit=int(parts[2]))[0]
+                send(f"bestmove {best_move}")
+            elif parts[1] == 'nodes':
+                best_move = state['engine'].best_move(tps=state['position'].to_tps(), max_sims=int(parts[2]))[0]
+                send(f"bestmove {best_move}")
+            elif parts[1] == 'infinite':
+                raise NotImplementedError("infinite search not implemented")
+            elif parts[1] == 'wtime':
+                raise NotImplementedError("dynamic movetime is not implemented")
+
+        else:
+            raise ValueError(f"unknown command '{line}'")
+
+
+
+
+if __name__ == "__main__":
+    run_tei()

@@ -168,7 +168,50 @@ def run_self_games(model1, model2, num_positions, c_puct, urgency, num_games, ko
 
 
 
+# print('self games, model 13_20 vs 13_15')
+# run_self_games('model_checkpoints/version_13_20.pt', 'model_checkpoints/version_13_15.pt', 5_000, 1.5, -0.2, 100, 2, save_games=True)
+# wins: 42, losses: 47, draws: 11
+# total games: 100
 
 
 
+# print('self games, model 13_26 vs 13_15')
+# run_self_games('model_checkpoints/version_13_26.pt', 'model_checkpoints/version_13_15.pt', 5_000, 1.5, -0.2, 100, 2, save_games=True)
+# wins: 40, losses: 46, draws: 14
+# total games: 100
 
+
+# print('self games, model 13_84 vs 13_15')
+# run_self_games('model_checkpoints/version_13_84.pt', 'model_checkpoints/version_13_15.pt', 5_000, 1.5, -0.2, 100, 2, save_games=True)
+# wins: 57, losses: 32, draws: 11
+# total games: 100
+
+# print('self games, model 13_60 vs 13_15')
+# run_self_games('model_checkpoints/version_13_60.pt', 'model_checkpoints/version_13_15.pt', 5_000, 1.5, -0.2, 100, 2, save_games=True)
+# wins: 70, losses: 11, draws: 19
+# total games: 100
+
+# print('self games, model 13_50 vs 13_15')
+# run_self_games('model_checkpoints/version_13_50.pt', 'model_checkpoints/version_13_15.pt', 5_000, 1.5, -0.2, 100, 2, save_games=True)
+# wins: 66, losses: 18, draws: 16
+# total games: 100
+
+# print('self games, model 13_40 vs 13_15')
+# run_self_games('model_checkpoints/version_13_40.pt', 'model_checkpoints/version_13_15.pt', 5_000, 1.5, -0.2, 100, 2, save_games=True)
+# wins: 67, losses: 18, draws: 15
+# total games: 100
+
+
+# print('self games, model 13_84 vs 13_70')
+# run_self_games('model_checkpoints/version_13_84.pt', 'model_checkpoints/version_13_70.pt', 5_000, 1.5, -0.2, 100, 2, save_games=True)
+# wins: 36, losses: 34, draws: 30
+# total games: 100
+
+# print('self games, model 13_84 vs 13_60')
+# run_self_games('model_checkpoints/version_13_84.pt', 'model_checkpoints/version_13_60.pt', 5_000, 1.5, -0.2, 100, 2, save_games=True)
+# wins: 35, losses: 47, draws: 18
+# total games: 100
+
+
+print('self games, model 13_84 vs 13_70')
+run_self_games('model_checkpoints/version_13_70.pt', 'model_checkpoints/version_13_60.pt', 5_000, 1.5, -0.2, 100, 2, save_games=True)

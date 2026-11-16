@@ -1,5 +1,5 @@
 import socket, threading, time
-from engine_clients.roadbuilder import RoadBuilderGame
+from engine_clients.roadbuilder import RoadBuilderGame, RoadBuilder
 import tak_engine
 import playtak_connection.parsing as parsing
 import os
@@ -12,12 +12,12 @@ load_dotenv()
 
 HOST, PORT = "playtak.com", 10000
 sock = socket.create_connection((HOST, PORT))
-f_write = sock.makefile("rw", encoding="utf-8", newline="\n")
+f_write = sock.makefile("w", encoding="utf-8", newline="\n")
+f_read = sock.makefile("r", encoding="utf-8", newline="\n")
 lock = threading.Lock()
 lines = queue.Queue()
 
 def reader():
-    f_read = sock.makefile("r", encoding="utf-8", newline="\n")
     while True:
         line = f_read.readline()
         if not line:
@@ -43,8 +43,10 @@ threading.Thread(target=reader, daemon=True).start()
 
 class EventHandler(ABC):
     @abstractmethod
-    def handle_event(self, line: str):
+    def handle_event(self, line: str) -> EventHandler:
         print("<", line)
+        return self
+
 
     @abstractmethod
     def run_idle(self) -> EventHandler:
@@ -63,6 +65,8 @@ class LoginEventHandler(EventHandler):
             send(f"Login {self.user} {self.password}")
         elif line.startswith(f"Welcome {self.user}"):
             self.logged_in = True
+            return self.future_handler
+        return self
 
     def run_idle(self):
         if self.logged_in:
@@ -89,6 +93,7 @@ class SeekEventHandler(EventHandler):
         if line.startswith("Game Start"):
             self.game_no = int(line.split(" ")[2])
             self.game_color = line.split(" ")[7]
+        return self
 
     def run_idle(self):
         if self.game_no is None:
@@ -111,8 +116,11 @@ class AcceptEventHandler(EventHandler):
     def handle_event(self, line):
         super().handle_event(line)
         if line.startswith("Seek new "):
+            print(line)
             name = line.split(" ")[3]
+            print(name)
             if name == self.challenger_name:
+                print("Accepting")
                 send(f"Accept {int(line.split(' ')[2])}")
                 self.sent_accept = True
                 self.game_settings = {
@@ -123,6 +131,7 @@ class AcceptEventHandler(EventHandler):
         if line.startswith("Game Start"):
             self.game_no = int(line.split(" ")[2])
             self.game_color = line.split(" ")[7]
+        return self
 
     def clone(self):
         return AcceptEventHandler(self.challenger_name)
@@ -154,6 +163,8 @@ class GameEventHandler(EventHandler):
 
 
     def send_move(self):
+        if self.game.result() != 0:
+            return
         time_to_move = self.time_increment
         if self.current_q is None:
             pass
@@ -185,6 +196,8 @@ class GameEventHandler(EventHandler):
             if time_to_move <= 0:
                 time_to_move = 0.2
 
+        time_to_move = 1.5
+
         best_move, _, _, q = self.engine.best_move(time_limit=int(time_to_move * 1000))
         self.engine.make_move(best_move)
         self.current_q = q
@@ -206,17 +219,19 @@ class GameEventHandler(EventHandler):
                 self.current_time = int(line.split(" ")[2])
             elif sent_type == "Over":
                 self.game_over = True
+        return self
 
 
     def run_idle(self):
         if self.game_over:
             return self.future_handler
         else:
-            self.engine.bake_tree(time_limit=500)
+            # self.engine.bake_tree(time_limit=500)
             return self
 
-seek_action = SeekEventHandler(600, 20, 2, "A", 0)
-handler: EventHandler | None = LoginEventHandler(os.getenv('PLAYTAK_USERNAME'), os.getenv('PASSWORD'), seek_action.clone())
+action = SeekEventHandler(600, 10, 2, "A", 0)
+#action = AcceptEventHandler("Tiltak_Bot")
+handler: EventHandler = LoginEventHandler(os.getenv('PLAYTAK_USERNAME'), os.getenv('PASSWORD'), action.clone())
 while True:
 
     handler = handler.run_idle()
@@ -227,15 +242,15 @@ while True:
     while True:
         try:
             line = lines.get_nowait()
-            handler.handle_event(line)
+            handler = handler.handle_event(line)
         except queue.Empty:
             break
 
 
 
 
-
 '''
+
 game_no = None
 my_color = None
 
@@ -243,7 +258,8 @@ engine = RoadBuilder('model_checkpoints/version_9_34.pt')
 game = tak_engine.Tak(komi=2)
 sent_accsept = False
 
-for raw in f:                       # iterates line by line; ends at EOF
+
+for raw in f_read:                       # iterates line by line; ends at EOF
     line = raw.rstrip("\n")
     print("<", line)
     words = line.split(" ")
