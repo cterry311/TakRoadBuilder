@@ -337,18 +337,20 @@ impl Search {
 
     /// (hits, misses, entries) for the eval cache, all 0 when it is off.
     fn cache_stats(&self) -> (u64, u64, usize) { self.tree.cache_stats() }
-    
+
     fn avg_depth(&self) -> f32 {
         self.tree.avg_depth()
     }
-    
-    fn max_depth(&self) -> u16 {
+
+    fn max_depth(&self) -> u8 {
         self.tree.max_depth()
     }
-    
+
     fn depth_stats(&self) -> Vec<(u16, f32, u16)> {
         self.tree.root_depths()
     }
-    
+
+    fn node_count(&self) -> usize { self.tree.node_count() }
+
 }
 

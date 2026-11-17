@@ -22,10 +22,10 @@ struct Node {
     // from the view of the player to move AT this node
     proven: Proven,      // exact result for the player to move at this node
     pending: bool,       // claimed by a leaf in the current batch
-    first_child: usize,  // the index of the first child in the tree Nodes array
-    n_children: usize,   // 0 = not expanded yet
-    total_depth: u64,    // over every simulation through this node: sum of (leaf depth - this node's depth)
-    max_depth: u16,      // deepest simulation below this node, in steps from this node
+    first_child: u32,  // the index of the first child in the tree Nodes array
+    n_children: u16,   // 0 = not expanded yet
+    total_depth: u32,    // over every simulation through this node: sum of (leaf depth - this node's depth)
+    max_depth: u8,      // deepest simulation below this node, in steps from this node
 }
 
 impl Node {
@@ -143,8 +143,8 @@ impl Tree {
 
         let mut best = node.first_child;
         let mut best_score = f32::NEG_INFINITY;
-        for i in node.first_child..node.first_child + node.n_children {
-            let c = &self.nodes[i];
+        for i in node.first_child..node.first_child + (node.n_children as u32) {
+            let c = &self.nodes[i as usize];
             let q = if c.n > 0 { -c.q() } else { fpu };   // child's view is the opponent's: negate
             let u = self.c_puct * c.prior * sqrt_total / (1.0 + c.n as f32);
             if q + u > best_score {
@@ -152,8 +152,9 @@ impl Tree {
                 best = i;
             }
         }
-        best
+        best as usize
     }
+
 
     /// Priors for `legal` from the full softmaxed policy row (POLICY_LEN), renormalized over legal moves.
     fn legal_priors(legal: &[Move], policy: &[f32]) -> Vec<f32> {
@@ -174,8 +175,8 @@ impl Tree {
                 max_depth: 0, total_depth: 0,
             });
         }
-        self.nodes[idx].first_child = first;
-        self.nodes[idx].n_children = legal.len();
+        self.nodes[idx].first_child = first as u32;
+        self.nodes[idx].n_children = legal.len() as u16;
     }
 
     /// The only place values flip sign.
@@ -184,8 +185,8 @@ impl Tree {
             let node = &mut self.nodes[i];
             node.n += 1;
             node.w += value;
-            node.total_depth += k as u64;
-            node.max_depth = node.max_depth.max(k as u16);
+            node.total_depth += k as u32;
+            node.max_depth = node.max_depth.max(k as u8);
             value = -value;
         }
     }
@@ -282,9 +283,9 @@ impl Tree {
 
     pub fn best_move(&self) -> Move {
         let root = &self.nodes[0];
-        let mut best = root.first_child;
-        for i in root.first_child..root.first_child + root.n_children {
-            if self.nodes[i].n > self.nodes[best].n { best = i; }
+        let mut best: usize = root.first_child as usize;
+        for i in root.first_child..root.first_child + root.n_children as u32 {
+            if self.nodes[i as usize].n > self.nodes[best].n { best = i as usize; }
         }
         self.nodes[best].mv
     }
@@ -296,8 +297,8 @@ impl Tree {
 
     pub fn root_stats(&self) -> Vec<(u16, u32, f32)> {    // (raw move, visits, -q) for logging and later training targets
         let root = &self.nodes[0];
-        (root.first_child..root.first_child + root.n_children)
-            .map(|i| (self.nodes[i].mv.raw(), self.nodes[i].n, -self.nodes[i].q()))
+        (root.first_child..root.first_child + root.n_children as u32)
+            .map(|i| (self.nodes[i as usize].mv.raw(), self.nodes[i as usize].n, -self.nodes[i as usize].q()))
             .collect()
     }
 
@@ -315,7 +316,7 @@ impl Tree {
         // 1. Find the root's child range. Copy the numbers out so no borrow is held.
         let (start, end) = {
             let root = &self.nodes[0];
-            (root.first_child, root.first_child + root.n_children)
+            (root.first_child, root.first_child + root.n_children as u32)
         };
         if end <= start { return; }             // root not expanded yet: nothing to do
 
@@ -331,8 +332,8 @@ impl Tree {
 
         // 4. Mix into the priors.
         for (k, i) in (start..end).enumerate() {
-            let p = self.nodes[i].prior;
-            self.nodes[i].prior = (1.0 - eps) * p + eps * noise[k];
+            let p = self.nodes[i as usize].prior;
+            self.nodes[i as usize].prior = (1.0 - eps) * p + eps * noise[k];
         }
     }
 
@@ -344,21 +345,21 @@ impl Tree {
             return Err("rebase_tree called between collect and submit".to_string());
         }
         let root = &self.nodes[0];
-        let old_idx = (root.first_child..root.first_child + root.n_children)
-            .find(|&i| self.nodes[i].mv.raw() == mv.raw())
+        let old_idx = (root.first_child..root.first_child + root.n_children as u32)
+            .find(|&i| self.nodes[i as usize].mv.raw() == mv.raw())
             .ok_or_else(|| format!("move {} is not a child of the root (root not expanded, or illegal move)", mv.to_ptn()))?;
 
         // breadth first copy: children are stored contiguously, so each node's children
         // land contiguously in the new arena and first_child can be rewritten as they are pushed
         let mut new_nodes = Vec::with_capacity(self.nodes.len());
-        new_nodes.push(self.nodes[old_idx].clone());
+        new_nodes.push(self.nodes[old_idx as usize].clone());
         let mut head = 0;
         while head < new_nodes.len() {
             let (first, count) = (new_nodes[head].first_child, new_nodes[head].n_children);
             if count > 0 {
-                new_nodes[head].first_child = new_nodes.len();
-                for i in first..first + count {
-                    new_nodes.push(self.nodes[i].clone());
+                new_nodes[head].first_child = new_nodes.len() as u32;
+                for i in first..first + count as u32 {
+                    new_nodes.push(self.nodes[i as usize].clone());
                 }
             }
             head += 1;
@@ -378,21 +379,22 @@ impl Tree {
     }
 
     /// deepest simulation from the root: report as `seldepth`
-    pub fn max_depth(&self) -> u16 { self.nodes[0].max_depth }
+    pub fn max_depth(&self) -> u8 { self.nodes[0].max_depth }
 
     /// per root child: (raw move, avg depth from the root, max depth from the root),
     /// in the same order as root_stats. For the `depth` / `seldepth` of each multipv line.
     pub fn root_depths(&self) -> Vec<(u16, f32, u16)> {
         let root = &self.nodes[0];
-        (root.first_child..root.first_child + root.n_children)
+        (root.first_child..root.first_child+ root.n_children as u32)
             .map(|i| {
-                let c = &self.nodes[i];
+                let c = &self.nodes[i as usize];
                 let avg = if c.n == 0 { 0.0 } else { c.total_depth as f32 / c.n as f32 + 1.0 };
                 let max = if c.n == 0 { 0 } else { c.max_depth + 1 };
-                (c.mv.raw(), avg, max)
-            })
-            .collect()
+                (c.mv.raw(), avg, max as u16)
+            }).collect()
     }
+
+    pub fn node_count(&self) -> usize { self.nodes.len() }
 }
 
 /// Value from the view of the side to move at `g`.
@@ -466,7 +468,7 @@ mod tests {
         assert_eq!(na.mv.raw(), nb.mv.raw());
         assert_eq!((na.n, na.w, na.n_children), (nb.n, nb.w, nb.n_children));
         for k in 0..na.n_children {
-            same_subtree(a, na.first_child + k, b, nb.first_child + k);
+            same_subtree(a, (na.first_child + k as u32) as usize, b, (nb.first_child + k as u32) as usize);
         }
     }
 
@@ -476,13 +478,13 @@ mod tests {
         let mut tree = grown_tree(40);
         let root = &tree.nodes[0];
         // the most visited child, so it has a real subtree
-        let child = (root.first_child..root.first_child + root.n_children)
-            .max_by_key(|&i| tree.nodes[i].n).unwrap();
-        let mv = tree.nodes[child].mv;
-        assert!(tree.nodes[child].n_children > 0);
+        let child = (root.first_child..root.first_child + root.n_children as u32)
+            .max_by_key(|&i| tree.nodes[i as usize].n).unwrap();
+        let mv = tree.nodes[child as usize].mv;
+        assert!(tree.nodes[child as usize].n_children > 0);
 
         tree.rebase_tree(mv).unwrap();
-        same_subtree(&old, child, &tree, 0);
+        same_subtree(&old, child as usize, &tree, 0);
 
         let mut expected = old.root.clone();
         expected.make_move(mv);
@@ -491,9 +493,9 @@ mod tests {
         // only the subtree is kept: count it in the old arena
         fn count(t: &Tree, i: usize) -> usize {
             let n = &t.nodes[i];
-            1 + (n.first_child..n.first_child + n.n_children).map(|c| count(t, c)).sum::<usize>()
+            1 + (n.first_child..n.first_child + n.n_children as u32).map(|c| count(t, c as usize)).sum::<usize>()
         }
-        assert_eq!(tree.nodes.len(), count(&old, child));
+        assert_eq!(tree.nodes.len(), count(&old, child as usize));
 
         // the rebased tree keeps searching normally
         let mut buf = vec![0.0f32; 64 * INPUT_LEN];
@@ -513,7 +515,7 @@ mod tests {
         let mut tree = grown_tree(5);
         let mut buf = vec![0.0f32; 64 * INPUT_LEN];
         tree.collect(&mut buf, 64);
-        let mv = tree.nodes[tree.nodes[0].first_child].mv;
+        let mv = tree.nodes[tree.nodes[0].first_child as usize].mv;
         assert!(tree.rebase_tree(mv).is_err());
     }
 
@@ -651,12 +653,12 @@ mod tests {
         let tree = grown_tree(40);
         for node in &tree.nodes {
             if node.n_children == 0 { continue; }
-            let kids = node.first_child..node.first_child + node.n_children;
-            let sum: u64 = kids.clone()
-                .map(|i| tree.nodes[i].total_depth + tree.nodes[i].n as u64).sum();
+            let kids = node.first_child..node.first_child + node.n_children as u32;
+            let sum: u32 = kids.clone()
+                .map(|i| tree.nodes[i as usize].total_depth + tree.nodes[i as usize].n).sum();
             assert_eq!(node.total_depth, sum);
-            let max = kids.filter(|&i| tree.nodes[i].n > 0)
-                .map(|i| tree.nodes[i].max_depth + 1).max().unwrap_or(0);
+            let max = kids.filter(|&i| tree.nodes[i as usize].n > 0)
+                .map(|i| tree.nodes[i as usize].max_depth + 1).max().unwrap_or(0);
             assert_eq!(node.max_depth, max);
         }
     }

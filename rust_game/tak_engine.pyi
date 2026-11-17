@@ -373,3 +373,8 @@ class Search:
         per root child: (raw move, avg depth from the root, max depth from the root),
         in the same order as root_stats. For the `depth` / `seldepth` of each multipv line.
         """
+
+    def node_count(self) -> int:
+        """
+        returns the number of nodes in the tree
+        """
