@@ -443,6 +443,7 @@ from random import choice
 import sys
 import sqlite3
 import tak_engine
+from engine_clients.roadbuilder import RoadBuilderGame
 
 # ---- easy-to-swap settings ----
 DB_PATH = "self_play_records/self_play_1.db"
@@ -504,12 +505,19 @@ def export_game(db_path, game_id, out_path=None):
     print(f"wrote {out_path} ({len(ptn_moves)} plies, result {result})")
 
 
-
+import requests
+import json
 
 if __name__ == "__main__":
-    gid = int(sys.argv[1]) if len(sys.argv) > 1 else GAME_ID
-    export_game(DB_PATH, gid, OUT_PATH)
-    conn = sqlite3.connect(DB_PATH)
-    print(conn.execute("SELECT COUNT(*) FROM self_play_games WHERE encoder_version = 1 ").fetchall())
+    # gid = int(sys.argv[1]) if len(sys.argv) > 1 else GAME_ID
+    # export_game(DB_PATH, gid, OUT_PATH)
+    # conn = sqlite3.connect(DB_PATH)
+    # print(conn.execute("SELECT COUNT(*) FROM self_play_games WHERE encoder_version = 1 ").fetchall())
+    bot = RoadBuilderGame('model_checkpoints/version_13_60.pt')
+    bot.bake_tree(time_limit=5_000)
+    print('avg depth', bot.tree.avg_depth())
+    print('max depth', bot.tree.max_depth())
+
+
 
 

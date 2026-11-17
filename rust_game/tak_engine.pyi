@@ -357,3 +357,19 @@ class Search:
             ValueError: if called between collect and submit, or if mv is not a
                 child of the root (root not expanded yet, or not a legal move).
         """
+
+    def avg_depth(self) -> float:
+        """
+        the average simulation depth from the root
+        """
+
+    def max_depth(self) -> int:
+        """
+        the deepest simulation line from the root
+        """
+
+    def depth_stats(self) -> list[tuple[int, float, int]]:
+        """
+        per root child: (raw move, avg depth from the root, max depth from the root),
+        in the same order as root_stats. For the `depth` / `seldepth` of each multipv line.
+        """

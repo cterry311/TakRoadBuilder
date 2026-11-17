@@ -10,7 +10,7 @@ import tak_engine
 
 from engine_clients.roadbuilder import RoadBuilder
 
-model_client = RoadBuilder('model_checkpoints/version_9_34.pt')
+model_client = RoadBuilder('model_checkpoints/version_13_60.pt')
 
 
 def get_model_move(game: tak_engine.Tak, search_time, c_puct, urgency):
@@ -254,3 +254,8 @@ def run_tiltak_bot_games(taktician_bot_time, model_time, c_puct, urgency, num_ga
 # total games: 100
 
 
+
+# print('tiltak bot games, mutual 2000 ms') # version_13_60.pt
+# run_tiltak_bot_games(2000, 2000, 1.5, -0.2, 100, save_games=True)
+# wins: 82, losses: 13, draws: 5
+# total games: 100

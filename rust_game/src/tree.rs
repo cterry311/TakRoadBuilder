@@ -24,6 +24,8 @@ struct Node {
     pending: bool,       // claimed by a leaf in the current batch
     first_child: usize,  // the index of the first child in the tree Nodes array
     n_children: usize,   // 0 = not expanded yet
+    total_depth: u64,    // over every simulation through this node: sum of (leaf depth - this node's depth)
+    max_depth: u16,      // deepest simulation below this node, in steps from this node
 }
 
 impl Node {
@@ -116,7 +118,7 @@ impl Tree {
     pub fn new(root: Tak, urgency: f32, c_puct: f32) -> Tree {
         let root_node = Node {
             mv: Move::from_raw(0), prior: 1.0, n: 0, w: 0.0,
-            proven: Proven::Unknown, pending: false, first_child: 0, n_children: 0,
+            proven: Proven::Unknown, pending: false, first_child: 0, n_children: 0, max_depth: 0, total_depth: 0,
         };
         Tree { nodes: vec![root_node], root, urgency, c_puct, pending: Vec::new(), cache: None }
     }
@@ -169,6 +171,7 @@ impl Tree {
                 n: 0, w: 0.0,
                 proven: Proven::Unknown, pending: false,
                 first_child: 0, n_children: 0,
+                max_depth: 0, total_depth: 0,
             });
         }
         self.nodes[idx].first_child = first;
@@ -177,10 +180,12 @@ impl Tree {
 
     /// The only place values flip sign.
     fn backup(&mut self, path: &[usize], mut value: f32) {
-        for &i in path.iter().rev() {
+        for (k, &i) in path.iter().rev().enumerate() {
             let node = &mut self.nodes[i];
             node.n += 1;
             node.w += value;
+            node.total_depth += k as u64;
+            node.max_depth = node.max_depth.max(k as u16);
             value = -value;
         }
     }
@@ -364,6 +369,29 @@ impl Tree {
             cache.on_rebase();
         }
         Ok(())
+    }
+
+    /// average simulation depth from the root: report as `depth`
+    pub fn avg_depth(&self) -> f32 {
+        let r = &self.nodes[0];
+        if r.n == 0 { 0.0 } else { r.total_depth as f32 / r.n as f32 }
+    }
+
+    /// deepest simulation from the root: report as `seldepth`
+    pub fn max_depth(&self) -> u16 { self.nodes[0].max_depth }
+
+    /// per root child: (raw move, avg depth from the root, max depth from the root),
+    /// in the same order as root_stats. For the `depth` / `seldepth` of each multipv line.
+    pub fn root_depths(&self) -> Vec<(u16, f32, u16)> {
+        let root = &self.nodes[0];
+        (root.first_child..root.first_child + root.n_children)
+            .map(|i| {
+                let c = &self.nodes[i];
+                let avg = if c.n == 0 { 0.0 } else { c.total_depth as f32 / c.n as f32 + 1.0 };
+                let max = if c.n == 0 { 0 } else { c.max_depth + 1 };
+                (c.mv.raw(), avg, max)
+            })
+            .collect()
     }
 }
 
@@ -615,6 +643,21 @@ mod tests {
             assert_eq!(s.sims(), p.sims());
             assert_eq!(s.root_stats(), p.root_stats());
             assert_eq!(s.cache_stats(), p.cache_stats());
+        }
+    }
+
+    #[test]
+    fn depth_stats_are_consistent() {
+        let tree = grown_tree(40);
+        for node in &tree.nodes {
+            if node.n_children == 0 { continue; }
+            let kids = node.first_child..node.first_child + node.n_children;
+            let sum: u64 = kids.clone()
+                .map(|i| tree.nodes[i].total_depth + tree.nodes[i].n as u64).sum();
+            assert_eq!(node.total_depth, sum);
+            let max = kids.filter(|&i| tree.nodes[i].n > 0)
+                .map(|i| tree.nodes[i].max_depth + 1).max().unwrap_or(0);
+            assert_eq!(node.max_depth, max);
         }
     }
 }

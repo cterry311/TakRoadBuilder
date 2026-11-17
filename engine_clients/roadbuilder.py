@@ -7,6 +7,8 @@ import time
 import sys
 import threading
 import queue
+import socket
+import websockets
 '''
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -255,19 +257,33 @@ def run_tei(get_lines=None, send=None):
 
     while True:
         line: str = lines.get()
-        line = line.strip()
         if line is None:
             break
-        elif line == 'tei':
+        line = line.strip()
+        if line == 'tei':
             if state != {}:
                 raise ValueError("Already in tei state")
             send('id name RoadBuilder')
             send('id author Cason Terry')
-            # options go here
+            send('option name HalfKomi type combo default 4 var 4')
+            send('option name Urgency type spin default -20 min -300 max 300')
+            send('option name CPuct type spin default 150 min 0 max 300')
+            send('option name Alpha type spin default 10 min 0 max 100')
+            send('option name Epsilon type spin default 25 min 0 max 100')
             send('teiok')
             state['tei'] = True
+            state['Urgency'] = -0.2
+            state['CPuct'] = 1.5
+            state['Alpha'] = 0.1
+            state['Epsilon'] = 0.25
         elif 'tei' not in state or not state['tei']:
             pass # the CLI is not in a tei state, ignore all commands that are not tei
+        elif line.startswith('setoption '):
+            parts = line.split(' ')
+            if parts[1] == 'name':
+                if parts[2] == 'HalfKomi':
+                    if parts[4] != '4':
+                        raise ValueError("Only HalfKomi=4 is supported")
         elif line == 'isready':
             # assert that the model is ready to go, run a test batch
             send('readyok')
@@ -276,7 +292,20 @@ def run_tei(get_lines=None, send=None):
             if size != 6:
                 raise ValueError("Only 6x6 is supported")
             state['ingame'] = True
-            state['engine'] = RoadBuilder(model_path="model_checkpoints/version_13_60.pt")
+            state['device'] = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+            info = torch.load('model_checkpoints/version_13_60.pt', map_location=state['device'])
+            state['model'] = TakNet(**info["params"])
+            state['model'].load_state_dict(info["weights"])
+            state['model'].to(state['device']).eval()  # eval() matters: BatchNorm must not use batch stats
+
+            state['BATCH'] = 256
+            state['buf'] = np.zeros((state['BATCH'], 25, 6, 6), dtype=np.float32)
+            state['flat'] = state['buf'].reshape(-1)  # a view onto buf; Rust writes through it
+
+            # warm up CUDA so the first real move doesn't pay kernel setup time
+            with torch.no_grad():
+                state['model'](torch.zeros(state['BATCH'], 25, 6, 6, device=state['device']))
         elif line.startswith('position '):
             if 'ingame' not in state or not state['ingame']:
                 raise ValueError("Not in a game")
@@ -294,7 +323,7 @@ def run_tei(get_lines=None, send=None):
             elif parts[moves_index] == 'moves':
                 moves = parts[moves_index + 1:]
                 for move in moves:
-                    state['position'].make_move(move)
+                    state['position'].make_move(move.replace('*', ''))
             else:
                 raise ValueError(f"unexpected token '{parts[moves_index]}'")
         elif line.startswith('go'):
@@ -302,16 +331,103 @@ def run_tei(get_lines=None, send=None):
                 raise ValueError("No position specified")
             parts = line.split(' ')
             if parts[1] == 'movetime':
-                best_move = state['engine'].best_move(tps=state['position'].to_tps(), time_limit=int(parts[2]))[0]
-                send(f"bestmove {best_move}")
+                with torch.no_grad():
+                    seed = int(time.time() * 1000)
+
+                    s = tak_engine.Search(state['position'].to_tps(), komi=2, c_puct=state['CPuct'], urgency=state['Urgency'])
+                    time_limit = int(parts[2]) / 1000.0
+                    start = time.perf_counter()
+                    i = 0
+                    while True:
+                        if time_limit is not None and time.perf_counter() - start >= time_limit:
+                            break
+
+                        n = s.collect(state['flat'], state['BATCH'])
+                        if n == 0:  # every descent hit a finished game; already backed up
+                            continue
+
+                        x = torch.from_numpy(state['buf'][:n]).to(state['device'])
+                        policy, value = state['model'](x)
+
+                        pol = torch.softmax(policy.flatten(1), dim=1).cpu().numpy().reshape(-1)
+                        vp = torch.softmax(value, dim=1)
+                        val = (vp[:, 2] - vp[:, 0]).cpu().numpy()
+
+                        s.submit(pol, val)  # row i here must be row i of buf
+                        if i == 0:
+                            s.add_noise(state['Alpha'], state['Epsilon'], seed)
+                        i += 1
+                        send(f'info depth {int(round(s.avg_depth()))} seldepth {s.max_depth()} nodes {s.sims()} score cp {int(round(s.root_q() * 100))} time {int((time.perf_counter() - start) * 1000)} pv {tak_engine.Tak.raw_to_ptn(s.best_move_raw())}')
+                    best_move = tak_engine.Tak.raw_to_ptn(s.best_move_raw())
+                    send(f"bestmove {best_move}")
             elif parts[1] == 'nodes':
-                best_move = state['engine'].best_move(tps=state['position'].to_tps(), max_sims=int(parts[2]))[0]
-                send(f"bestmove {best_move}")
+                with torch.no_grad():
+                    seed = int(time.time() * 1000)
+
+                    s = tak_engine.Search(state['position'].to_tps(), komi=2, c_puct=state['CPuct'], urgency=state['Urgency'])
+                    sim_limit = int(parts[2])
+                    start = time.perf_counter()
+                    i = 0
+                    while True:
+                        if s.sims() >= sim_limit:
+                            break
+
+                        n = s.collect(state['flat'], state['BATCH'])
+                        if n == 0:  # every descent hit a finished game; already backed up
+                            continue
+
+                        x = torch.from_numpy(state['buf'][:n]).to(state['device'])
+                        policy, value = state['model'](x)
+
+                        pol = torch.softmax(policy.flatten(1), dim=1).cpu().numpy().reshape(-1)
+                        vp = torch.softmax(value, dim=1)
+                        val = (vp[:, 2] - vp[:, 0]).cpu().numpy()
+
+                        s.submit(pol, val)  # row i here must be row i of buf
+                        if i == 0:
+                            s.add_noise(state['Alpha'], state['Epsilon'], seed)
+                        i += 1
+                        send(
+                            f'info depth {int(round(s.avg_depth()))} seldepth {s.max_depth()} nodes {s.sims()} score cp {int(round(s.root_q() * 100))} time {int((time.perf_counter() - start) * 1000)} pv {tak_engine.Tak.raw_to_ptn(s.best_move_raw())}')
+                    best_move = tak_engine.Tak.raw_to_ptn(s.best_move_raw())
+                    send(f"bestmove {best_move}")
             elif parts[1] == 'infinite':
                 raise NotImplementedError("infinite search not implemented")
             elif parts[1] == 'wtime':
                 raise NotImplementedError("dynamic movetime is not implemented")
+            elif parts[1] == 'depth':
+                with torch.no_grad():
+                    seed = int(time.time() * 1000)
 
+                    s = tak_engine.Search(state['position'].to_tps(), komi=2, c_puct=state['CPuct'], urgency=state['Urgency'])
+                    depth_limit = int(parts[2])
+                    start = time.perf_counter()
+                    i = 0
+                    while True:
+                        if s.avg_depth() >= depth_limit:
+                            break
+
+                        n = s.collect(state['flat'], state['BATCH'])
+                        if n == 0:  # every descent hit a finished game; already backed up
+                            continue
+
+                        x = torch.from_numpy(state['buf'][:n]).to(state['device'])
+                        policy, value = state['model'](x)
+
+                        pol = torch.softmax(policy.flatten(1), dim=1).cpu().numpy().reshape(-1)
+                        vp = torch.softmax(value, dim=1)
+                        val = (vp[:, 2] - vp[:, 0]).cpu().numpy()
+
+                        s.submit(pol, val)  # row i here must be row i of buf
+                        if i == 0:
+                            s.add_noise(state['Alpha'], state['Epsilon'], seed)
+                        i += 1
+                        send(
+                            f'info depth {int(round(s.avg_depth()))} seldepth {s.max_depth()} nodes {s.sims()} score cp {int(round(s.root_q() * 100))} time {int((time.perf_counter() - start) * 1000)} pv {tak_engine.Tak.raw_to_ptn(s.best_move_raw())}')
+                    best_move = tak_engine.Tak.raw_to_ptn(s.best_move_raw())
+                    send(f"bestmove {best_move}")
+            else:
+                raise ValueError(f"unknown token '{parts[1]}'")
         else:
             raise ValueError(f"unknown command '{line}'")
 
@@ -319,4 +435,64 @@ def run_tei(get_lines=None, send=None):
 
 
 if __name__ == "__main__":
-    run_tei()
+
+    # HOST, PORT = "localhost", 7731
+    # sock = socket.create_connection((HOST, PORT))
+    # f_write = sock.makefile("w", encoding="utf-8", newline="\n")
+    # f_read = sock.makefile("r", encoding="utf-8", newline="\n")
+    #
+    # def send(line):
+    #     print(">", line)
+    #     f_write.write(line + "\n")
+    #     f_write.flush()
+    #
+    # def get_lines():
+    #     while True:
+    #         line = f_read.readline()
+    #         print("<", line)
+    #         if not line:
+    #             break
+    #         yield line.strip()
+
+    from websockets.sync.server import serve
+    from websockets.exceptions import ConnectionClosed
+
+    HOST, PORT = "localhost", 7731
+
+    ws = None
+    connected = threading.Event()
+    finished = threading.Event()
+
+
+    def handler(conn):
+        global ws
+        ws = conn
+        connected.set()
+        finished.wait()  # keep the connection open until we're done with it
+
+
+    server = serve(handler, HOST, PORT)  # the port is open as soon as this returns
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    print(f"Listening on ws://{HOST}:{PORT}, waiting for a client...")
+    connected.wait()
+    print("Client connected")
+
+
+    def send(line):
+        print(">", line)
+        ws.send(line)
+
+
+    def get_lines():
+        try:
+            for message in ws:
+                if isinstance(message, bytes):
+                    message = message.decode("utf-8")
+                print("<", message)
+                yield message.strip()
+        except ConnectionClosed:
+            pass
+
+
+    run_tei(get_lines=get_lines, send=send)

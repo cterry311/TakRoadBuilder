@@ -154,7 +154,7 @@ class GameEventHandler(EventHandler):
         self.current_time = total_time
         self.color = my_color
         self.game_no = game_no
-        self.engine = RoadBuilderGame('model_checkpoints/version_9_34.pt')
+        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt')
         self.current_q: float| None = None
         self.game_over = False
         self.future_handler = future_handler
