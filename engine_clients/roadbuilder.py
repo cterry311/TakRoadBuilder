@@ -284,6 +284,16 @@ def run_tei(get_lines=None, send=None):
                 if parts[2] == 'HalfKomi':
                     if parts[4] != '4':
                         raise ValueError("Only HalfKomi=4 is supported")
+                elif parts[2] =='Urgency':
+                    state['Urgency'] = int(parts[4]) / 100
+                elif parts[2] =='CPuct':
+                    state['CPuct'] = int(parts[4]) / 100
+                elif parts[2] =='Alpha':
+                    state['Alpha'] = int(parts[4]) / 100
+                elif parts[2] == 'Epsilon':
+                    state['Epsilon'] = int(parts[4]) / 100
+                else:
+                    raise ValueError(f"Option {parts[2]} is not supported")
         elif line == 'isready':
             # assert that the model is ready to go, run a test batch
             send('readyok')
@@ -392,7 +402,40 @@ def run_tei(get_lines=None, send=None):
                     best_move = tak_engine.Tak.raw_to_ptn(s.best_move_raw())
                     send(f"bestmove {best_move}")
             elif parts[1] == 'infinite':
-                raise NotImplementedError("infinite search not implemented")
+                with torch.no_grad():
+                    seed = int(time.time() * 1000)
+
+                    s = tak_engine.Search(state['position'].to_tps(), komi=2, c_puct=state['CPuct'], urgency=state['Urgency'])
+                    start = time.perf_counter()
+                    i = 0
+                    while True:
+                        try:
+                            line = lines.get_nowait()
+                            if line == 'stop':
+                                break
+                            else:
+                                raise ValueError(f"unexpected token '{line}'")
+                        except queue.Empty:
+                            pass
+                        n = s.collect(state['flat'], state['BATCH'])
+                        if n == 0:  # every descent hit a finished game; already backed up
+                            continue
+
+                        x = torch.from_numpy(state['buf'][:n]).to(state['device'])
+                        policy, value = state['model'](x)
+
+                        pol = torch.softmax(policy.flatten(1), dim=1).cpu().numpy().reshape(-1)
+                        vp = torch.softmax(value, dim=1)
+                        val = (vp[:, 2] - vp[:, 0]).cpu().numpy()
+
+                        s.submit(pol, val)  # row i here must be row i of buf
+                        if i == 0:
+                            s.add_noise(state['Alpha'], state['Epsilon'], seed)
+                        i += 1
+                        send(
+                            f'info depth {int(round(s.avg_depth()))} seldepth {s.max_depth()} nodes {s.sims()} score cp {int(round(s.root_q() * 100))} time {int((time.perf_counter() - start) * 1000)} pv {tak_engine.Tak.raw_to_ptn(s.best_move_raw())}')
+                    best_move = tak_engine.Tak.raw_to_ptn(s.best_move_raw())
+                    send(f"bestmove {best_move}")
             elif parts[1] == 'wtime':
                 raise NotImplementedError("dynamic movetime is not implemented")
             elif parts[1] == 'depth':
