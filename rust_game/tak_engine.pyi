@@ -208,7 +208,7 @@ class Search:
     """
 
     def __init__(self, tps: str, urgency: float = -0.2, c_puct: float = 1.5, komi: int = 0,
-                 eval_cache: bool = True, cache_max_age: int = 2) -> None:
+                 eval_cache: bool = True, cache_max_age: int = 2, capacity = 50_000) -> None:
         """
         Args:
             tps: TPS string of the position to search from (the root).
@@ -231,6 +231,7 @@ class Search:
                 return value.
             cache_max_age: Entries not used for more than this many
                 rebase_tree calls are dropped. Only matters with eval_cache.
+            capacity: the initial size of the nodes vector, set it to a high value to prevent resizing
         """
 
     def collect(self, buf: npt.NDArray[np.float32], max_leaves: int) -> int:

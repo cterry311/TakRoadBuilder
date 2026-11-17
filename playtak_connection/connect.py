@@ -154,7 +154,7 @@ class GameEventHandler(EventHandler):
         self.current_time = total_time
         self.color = my_color
         self.game_no = game_no
-        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt')
+        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt', capacity=200_000_000)
         self.current_q: float| None = None
         self.game_over = False
         self.future_handler = future_handler
@@ -198,7 +198,7 @@ class GameEventHandler(EventHandler):
 
         time_to_move = 1.5
 
-        best_move, _, _, q = self.engine.best_move(time_limit=int(time_to_move * 1000))
+        best_move, _, _, q = self.engine.best_move(time_limit=int(time_to_move * 1000), node_count=199_000_000)
         self.engine.make_move(best_move)
         self.current_q = q
         self.game.make_move(best_move)
@@ -226,7 +226,7 @@ class GameEventHandler(EventHandler):
         if self.game_over:
             return self.future_handler
         else:
-            # self.engine.bake_tree(time_limit=500)
+            self.engine.bake_tree(time_limit=500, node_count=199_000_000)
             return self
 
 action = SeekEventHandler(600, 10, 2, "A", 0)

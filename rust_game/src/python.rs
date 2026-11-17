@@ -288,10 +288,10 @@ pub fn submit_batch(
 #[pymethods]
 impl Search {
     #[new]
-    #[pyo3(signature = (tps, urgency = -0.2, c_puct = 1.5, komi = 0, eval_cache = true, cache_max_age = 2))]
-    fn new(tps: &str, urgency: f32, c_puct: f32, komi: u8, eval_cache: bool, cache_max_age: u32) -> PyResult<Self> {
+    #[pyo3(signature = (tps, urgency = -0.2, c_puct = 1.5, komi = 0, eval_cache = true, cache_max_age = 2, capacity = 50_000))]
+    fn new(tps: &str, urgency: f32, c_puct: f32, komi: u8, eval_cache: bool, cache_max_age: u32, capacity: usize) -> PyResult<Self> {
         let game = Tak::from_tps_with_komi(tps, komi).map_err(PyValueError::new_err)?;
-        let mut tree = Tree::new(game, urgency, c_puct);
+        let mut tree = Tree::new(game, urgency, c_puct, capacity);
         if eval_cache {
             tree = tree.with_eval_cache(cache_max_age);
         }

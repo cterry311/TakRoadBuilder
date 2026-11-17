@@ -136,7 +136,8 @@ class RoadBuilderGame:
             eps=0.25,
             eval_cache=True,
             cache_max_age=2,
-            komi=2
+            komi=2,
+            capacity=1_000_000
         ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -158,7 +159,7 @@ class RoadBuilderGame:
         self.komi = komi
 
         self.game = tak_engine.Tak(komi=komi)
-        self.tree = tak_engine.Search(self.game.to_tps(), urgency=urgency, c_puct=c_puct, komi=komi, eval_cache=eval_cache, cache_max_age=cache_max_age)
+        self.tree = tak_engine.Search(self.game.to_tps(), urgency=urgency, c_puct=c_puct, komi=komi, eval_cache=eval_cache, cache_max_age=cache_max_age, capacity=capacity)
         self.root_noised = False
 
         self.alpha = alpha
@@ -171,10 +172,10 @@ class RoadBuilderGame:
         except ValueError as e:
             self.tree = tak_engine.Search(self.game.to_tps(), urgency=self.urgency, c_puct=self.c_puct, komi=self.komi, eval_cache=True, cache_max_age=2)
     @torch.no_grad()
-    def best_move(self, max_sims: int | None =None, time_limit: int | None =None):
+    def best_move(self, max_sims: int | None =None, time_limit: int | None =None, node_count: int | None =None):
         seed = int(time.time() * 1000)
-        if max_sims is None and time_limit is None:
-            raise ValueError("Either max_sims or time_limit must be specified")
+        if max_sims is None and time_limit is None and node_count is None:
+            raise ValueError("Either max_sims or time_limit or node_count must be specified")
         if time_limit is not None:
             time_limit = time_limit / 1000.0
         if max_sims is not None:
@@ -185,6 +186,8 @@ class RoadBuilderGame:
             if max_sims is not None and self.tree.sims() >= max_sims:
                 break
             if time_limit is not None and time.perf_counter() - start >= time_limit:
+                break
+            if node_count is not None and self.tree.node_count() >= node_count:
                 break
 
             n = self.tree.collect(self.flat, self.BATCH)
@@ -204,9 +207,9 @@ class RoadBuilderGame:
             i += 1
         return tak_engine.Tak.raw_to_ptn(self.tree.best_move_raw()), self.tree.root_stats(), self.tree.sims(), self.tree.root_q()
     @torch.no_grad()
-    def bake_tree(self, max_sims=None, time_limit=None):
-        if max_sims is None and time_limit is None:
-            raise ValueError("Either max_sims or time_limit must be specified")
+    def bake_tree(self, max_sims=None, time_limit=None, node_count=None):
+        if max_sims is None and time_limit is None and node_count is None:
+            raise ValueError("Either max_sims or time_limit or node_count must be specified")
         if time_limit is not None:
             time_limit = time_limit / 1000.0
         if max_sims is not None:
@@ -216,6 +219,8 @@ class RoadBuilderGame:
             if max_sims is not None and self.tree.sims() >= max_sims:
                 break
             if time_limit is not None and time.perf_counter() - start >= time_limit:
+                break
+            if node_count is not None and self.tree.node_count() >= node_count:
                 break
 
             n = self.tree.collect(self.flat, self.BATCH)

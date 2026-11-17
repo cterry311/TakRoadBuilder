@@ -115,12 +115,14 @@ pub struct Tree {
 }
 
 impl Tree {
-    pub fn new(root: Tak, urgency: f32, c_puct: f32) -> Tree {
+    pub fn new(root: Tak, urgency: f32, c_puct: f32, capacity: usize) -> Tree {
         let root_node = Node {
             mv: Move::from_raw(0), prior: 1.0, n: 0, w: 0.0,
             proven: Proven::Unknown, pending: false, first_child: 0, n_children: 0, max_depth: 0, total_depth: 0,
         };
-        Tree { nodes: vec![root_node], root, urgency, c_puct, pending: Vec::new(), cache: None }
+        let mut nodes: Vec<Node> = Vec::with_capacity(capacity);
+        nodes.push(root_node);
+        Tree { nodes, root, urgency, c_puct, pending: Vec::new(), cache: None }
     }
 
     /// Turn on the eval cache. Entries unused for more than `max_age` rebases are dropped.
@@ -453,7 +455,7 @@ mod tests {
 
     /// Grow a tree with a uniform policy and value 0.
     fn grown_tree(rounds: usize) -> Tree {
-        let mut tree = Tree::new(Tak::new(), -0.2, 1.5);
+        let mut tree = Tree::new(Tak::new(), -0.2, 1.5, 500);
         let mut buf = vec![0.0f32; 64 * INPUT_LEN];
         for _ in 0..rounds {
             let n = tree.collect(&mut buf, 64);
@@ -508,7 +510,7 @@ mod tests {
     #[test]
     fn rebase_rejects_bad_calls() {
         // root not expanded yet
-        let mut fresh = Tree::new(Tak::new(), -0.2, 1.5);
+        let mut fresh = Tree::new(Tak::new(), -0.2, 1.5, 500);
         assert!(fresh.rebase_tree(Move::from_ptn("a1")).is_err());
 
         // between collect and submit
@@ -562,7 +564,7 @@ mod tests {
 
     #[test]
     fn cache_hits_and_eviction() {
-        let mut tree = Tree::new(Tak::new(), -0.2, 1.5).with_eval_cache(1);
+        let mut tree = Tree::new(Tak::new(), -0.2, 1.5, 500).with_eval_cache(1);
         let mut buf = vec![0.0f32; 64 * INPUT_LEN];
         for _ in 0..40 {
             let n = tree.collect(&mut buf, 64);
@@ -608,7 +610,7 @@ mod tests {
         ];
         let make = || -> Vec<Tree> {
             (0..6).map(|i| {
-                let t = Tree::new(Tak::from_tps(tps[i % 3]).unwrap(), -0.2, 1.5);
+                let t = Tree::new(Tak::from_tps(tps[i % 3]).unwrap(), -0.2, 1.5, 500);
                 if i % 2 == 0 { t.with_eval_cache(2) } else { t }
             }).collect()
         };
