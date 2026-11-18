@@ -254,7 +254,8 @@ class GameEventHandler(EventHandler):
         self.game_over = False
         self.future_handler = future_handler
         if opponent_name is not None:
-            send(f"Tell {opponent_name} hello {opponent_name} roadbuilder difficulty is {self.difficulty}")
+            send(f"Tell {opponent_name} roadbuilder difficulty is {self.difficulty}")
+            send(f"Tell {opponent_name} how to use https://github.com/cterry311/TakRoadBuilder/blob/master/RoadBuilderBot_settings.md")
 
         if my_color == "white":
             self.send_move()
@@ -384,6 +385,10 @@ class GameEventHandler(EventHandler):
                         send(f"Tell {sender_name} difficulty set to {message_parts[3]}")
                     else:
                         send(f'Tell {sender_name} unknown setting "{message_parts[2]}"')
+                elif message_parts[1] == 'help':
+                    send(f'Tell {sender_name} https://github.com/cterry311/TakRoadBuilder/blob/master/RoadBuilderBot_settings.md')
+                elif message_parts[1] == 'info':
+                    send(f'Tell {sender_name} c_puct {self.c_puct}, urgency {self.urgency}, alpha {self.alpha}, eps {self.eps}, max_sims {self.max_sims}, temperature {self.temperature}, difficulty {self.difficulty}')
                 else:
                     send(f'Tell {sender_name} unknown command "{message_parts[1]}"')
         return self

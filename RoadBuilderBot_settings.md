@@ -21,6 +21,8 @@
     - eps - how much noise is applied to the trees root. type float min 0 max 1
     - max_sims - the maximum number of simulations the engine is allowed to run, 0 is unlimited. type int min 0
     - temperature - how much randomness to apply to the move selection post search, 0 is selection of the best move. type float min 0
+  
+    the command is used as follows "roadbuilder set \<option_name> \<option_value>"
 - ### help
     this command will provide a link to the github page describing the commands
 - ### info
