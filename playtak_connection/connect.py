@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 import queue
 from abc import ABC, abstractmethod
+import json
 
 
 load_dotenv()
@@ -84,6 +85,7 @@ class SeekEventHandler(EventHandler):
         self.game_no = None
         self.game_color = None
         self.sent_seek = False
+        self.opponent_name = None
 
     def clone(self):
         return SeekEventHandler(self.start_time, self.increment, self.komi, self.color, self.unrated)
@@ -93,6 +95,10 @@ class SeekEventHandler(EventHandler):
         if line.startswith("Game Start"):
             self.game_no = int(line.split(" ")[2])
             self.game_color = line.split(" ")[7]
+            if line.split(" ")[4].lower() != 'roadbuilderbot':
+                self.opponent_name = line.split(" ")[4]
+            else:
+                self.opponent_name = line.split(" ")[6]
         return self
 
     def run_idle(self):
@@ -102,7 +108,7 @@ class SeekEventHandler(EventHandler):
                 self.sent_seek = True
             return self
         else:
-            return GameEventHandler(self.game_no, self.game_color, self.start_time, self.increment, self.komi, future_handler=self.clone())
+            return GameEventHandler(self.game_no, self.game_color, self.start_time, self.increment, self.komi, future_handler=self.clone(), opponent_name=self.opponent_name)
 
 
 class AcceptEventHandler(EventHandler):
@@ -140,24 +146,116 @@ class AcceptEventHandler(EventHandler):
         if self.game_no is None:
             return self
         else:
-            return GameEventHandler(self.game_no, self.game_color, **self.game_settings, future_handler=self.clone())
+            return GameEventHandler(self.game_no, self.game_color, **self.game_settings, future_handler=self.clone(), opponent_name=self.challenger_name)
 
 
+# c_puct
+# urgency
+# alpha
+# eps
 
+# max_sims
+
+# temperature
+
+DIFFICULTY_SETTINGS = {
+    'beginner': {
+            "c_puct": 1.5,
+            "urgency": -0.2,
+            "alpha": 0.1,
+            "eps": 0.3,
+            "max_sims": 1_000,
+            "temperature": 1.0,
+            "difficulty": 'beginner'
+    },
+    'easy': {
+            "c_puct": 1.5,
+            "urgency": -0.2,
+            "alpha": 0.05,
+            "eps": 0.25,
+            "max_sims": 1_500,
+            "temperature": 0.85,
+            "difficulty": 'medium'
+    },
+    'medium': {
+            "c_puct": 1.5,
+            "urgency": -0.2,
+            "alpha": 0.01,
+            "eps": 0.25,
+            "max_sims": 2_000,
+            "temperature": 0.7,
+            "difficulty": 'medium'
+    },
+    'hard': {
+            "c_puct": 1.5,
+            "urgency": -0.2,
+            "alpha": 0.01,
+            "eps": 0.5,
+            "max_sims": 6_000,
+            "temperature": 0.4,
+            "difficulty": 'hard'
+    },
+    'expert': {
+            "c_puct": 1.5,
+            "urgency": -0.2,
+            "alpha": 0.01,
+            "eps": 0.5,
+            "max_sims": 15_000,
+            "temperature": 0.1,
+            "difficulty": 'expert'
+    },
+    'master': {
+            "c_puct": 1.5,
+            "urgency": -0.2,
+            "alpha": 0.01,
+            "eps": 0.5,
+            "max_sims": 30_000,
+            "temperature": 0.05,
+            "difficulty": 'expert'
+    },
+    'max': {
+            "c_puct": 1.5,         # how much the inital prior should be weighed when eval is availible
+            "urgency": -0.2,       # how much the engine should be encoraged to try unexplored moves
+            "alpha": 0.1,          # how spread out the noise is, lower values will give spiky noise
+            "eps": 0.25,           # how much of the value is noise
+            "max_sims": 0,         # the maximum number of sims allowed 0 for unlimited sims
+            "temperature": 0,      # the how flat the distribution for sampling the move is, 0 is argmax,
+            "difficulty": "max"
+    },
+}
 
 class GameEventHandler(EventHandler):
 
-    def __init__(self, game_no, my_color, total_time, time_increment, komi, future_handler: EventHandler = None):
+    def __init__(self, game_no, my_color, total_time, time_increment, komi, future_handler: EventHandler = None, opponent_name: str = None):
         # Seek <size> <time> <increment> <color> <half_komi> <flats> <capstones> <unrated> <tournament?>
         self.game = tak_engine.Tak(komi=komi)
         self.time_increment = time_increment
         self.current_time = total_time
         self.color = my_color
         self.game_no = game_no
-        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt', capacity=200_000_000)
+
+        game_config = load_settings()
+
+        self.c_puct = game_config['c_puct']
+        self.urgency = game_config['urgency']
+        self.max_sims = game_config['max_sims']
+        self.alpha = game_config['alpha']
+        self.eps = game_config['eps']
+        self.temperature = game_config['temperature']
+        self.difficulty = game_config['difficulty']
+
+        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt',
+                                      capacity=200_000_000,
+                                      c_puct=self.c_puct,
+                                      urgency=self.urgency,
+                                      alpha=self.alpha,
+                                      eps=self.eps)
         self.current_q: float| None = None
         self.game_over = False
         self.future_handler = future_handler
+        if opponent_name is not None:
+            send(f"Tell {opponent_name} hello {opponent_name} roadbuilder difficulty is {self.difficulty}")
+
         if my_color == "white":
             self.send_move()
 
@@ -165,45 +263,27 @@ class GameEventHandler(EventHandler):
     def send_move(self):
         if self.game.result() != 0:
             return
-        time_to_move = self.time_increment
+
         if self.current_q is None:
-            pass
-        elif self.current_q < -0.9:
-            time_to_move = self.time_increment * 2
-        elif self.current_q < -0.7:
-            time_to_move = self.time_increment * 2.5
-        elif self.current_q < -0.5:
-            time_to_move = self.time_increment * 3
-        elif self.current_q < -0.3:
-            time_to_move = self.time_increment * 4
-        elif self.current_q < -0.1:
-            time_to_move = self.time_increment * 3
-        elif self.current_q < 0.1:
-            time_to_move = self.time_increment * 2
-        elif self.current_q < 0.3:
-            time_to_move = self.time_increment * 1.5
-        elif self.current_q < 0.5:
-            time_to_move = self.time_increment * 0.8
-        elif self.current_q < 0.8:
-            time_to_move = self.time_increment * 0.5
+            q_modifier = 1
+        else:
+            q_modifier = (-0.8 * self.current_q) + 1
 
-        if self.current_time - time_to_move <= 0:
-            time_to_move = self.current_time - 5
-            if time_to_move <= 0:
-                time_to_move = self.current_time - 2
-            if time_to_move <= 0:
-                time_to_move = self.current_time - 1
-            if time_to_move <= 0:
-                time_to_move = 0.2
+        time_modifier = (self.current_time / 120) + 0.5
 
-        time_to_move = 1.5
+        requested_time = min(self.time_increment * time_modifier * q_modifier, 40)
+        if requested_time <= self.current_time - 4:
+            time_to_move = requested_time - 4
+        else:
+            time_to_move = 2
 
-        best_move, _, _, q = self.engine.best_move(time_limit=int(time_to_move * 1000), node_count=199_000_000)
+        best_move, _, _, q = self.engine.best_move(time_limit=int(time_to_move * 1000), node_count=199_000_000, max_sims=self.max_sims, temp=self.temperature)
         self.engine.make_move(best_move)
         self.current_q = q
         self.game.make_move(best_move)
         server_move = parsing.ptn_to_server(best_move)
         send(f"Game#{self.game_no} {server_move}")
+        print('game_favorability', q)
 
     def handle_event(self, line: str):
         super().handle_event(line)
@@ -219,6 +299,93 @@ class GameEventHandler(EventHandler):
                 self.current_time = int(line.split(" ")[2])
             elif sent_type == "Over":
                 self.game_over = True
+        elif line.startswith("Tell <"):
+            parts = line.split(" ")
+            sender_name = parts[1][1:-1]
+            message = " ".join(parts[2:]).lower()
+            if message.startswith("roadbuilder "):
+                message_parts = message.split(" ")
+                if message_parts[1] == 'set':
+                    if message_parts[2] == 'c_puct':
+                        self.c_puct = float(message_parts[3])
+                        self.difficulty = 'Custom'
+                        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt',
+                                                      capacity=200_000_000,
+                                                      c_puct=self.c_puct,
+                                                      urgency=self.urgency,
+                                                      alpha=self.alpha,
+                                                      eps=self.eps)
+                        save_settings(self.c_puct, self.urgency, self.alpha, self.eps, self.max_sims, self.temperature, self.difficulty)
+                        send(f"Tell {sender_name} c_punt set to {message_parts[3]}")
+                    elif message_parts[2] == 'urgency':
+                        self.urgency = float(message_parts[3])
+                        self.difficulty = 'Custom'
+                        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt',
+                                                      capacity=200_000_000,
+                                                      c_puct=self.c_puct,
+                                                      urgency=self.urgency,
+                                                      alpha=self.alpha,
+                                                      eps=self.eps)
+                        save_settings(self.c_puct, self.urgency, self.alpha, self.eps, self.max_sims, self.temperature,
+                                      self.difficulty)
+                        send(f"Tell {sender_name} urgency set to {message_parts[3]}")
+                    elif message_parts[2] == 'alpha':
+                        self.alpha = float(message_parts[3])
+                        self.difficulty = 'Custom'
+                        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt',
+                                                      capacity=200_000_000,
+                                                      c_puct=self.c_puct,
+                                                      urgency=self.urgency,
+                                                      alpha=self.alpha,
+                                                      eps=self.eps)
+                        save_settings(self.c_puct, self.urgency, self.alpha, self.eps, self.max_sims, self.temperature,
+                                      self.difficulty)
+                        send(f"Tell {sender_name} alpha set to {message_parts[3]}")
+                    elif message_parts[2] == 'eps':
+                        self.eps = float(message_parts[3])
+                        self.difficulty = 'Custom'
+                        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt',
+                                                      capacity=200_000_000,
+                                                      c_puct=self.c_puct,
+                                                      urgency=self.urgency,
+                                                      alpha=self.alpha,
+                                                      eps=self.eps)
+                        save_settings(self.c_puct, self.urgency, self.alpha, self.eps, self.max_sims, self.temperature,
+                                      self.difficulty)
+                        send(f"Tell {sender_name} eps set to {message_parts[3]}")
+                    elif message_parts[2] == 'max_sims':
+                        self.max_sims = int(message_parts[3])
+                        self.difficulty = 'Custom'
+                        save_settings(self.c_puct, self.urgency, self.alpha, self.eps, self.max_sims, self.temperature,
+                                      self.difficulty)
+                        send(f"Tell {sender_name} max_sims set to {message_parts[3]}")
+                    elif message_parts[2] == 'temperature':
+                        self.temperature = float(message_parts[3])
+                        self.difficulty = 'Custom'
+                        save_settings(self.c_puct, self.urgency, self.alpha, self.eps, self.max_sims, self.temperature,
+                                      self.difficulty)
+                        send(f"Tell {sender_name} temperature set to {message_parts[3]}")
+                    elif message_parts[2] == 'difficulty':
+                        self.difficulty = message_parts[3]
+                        self.c_puct = DIFFICULTY_SETTINGS[message_parts[3]]['c_puct']
+                        self.urgency = DIFFICULTY_SETTINGS[message_parts[3]]['urgency']
+                        self.alpha = DIFFICULTY_SETTINGS[message_parts[3]]['alpha']
+                        self.eps = DIFFICULTY_SETTINGS[message_parts[3]]['eps']
+                        self.max_sims = DIFFICULTY_SETTINGS[message_parts[3]]['max_sims']
+                        self.temperature = DIFFICULTY_SETTINGS[message_parts[3]]['temperature']
+                        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt',
+                                                      capacity=200_000_000,
+                                                      c_puct=self.c_puct,
+                                                      urgency=self.urgency,
+                                                      alpha=self.alpha,
+                                                      eps=self.eps)
+                        save_settings(self.c_puct, self.urgency, self.alpha, self.eps, self.max_sims, self.temperature,
+                                      self.difficulty)
+                        send(f"Tell {sender_name} difficulty set to {message_parts[3]}")
+                    else:
+                        send(f'Tell {sender_name} unknown setting "{message_parts[2]}"')
+                else:
+                    send(f'Tell {sender_name} unknown command "{message_parts[1]}"')
         return self
 
 
@@ -226,10 +393,30 @@ class GameEventHandler(EventHandler):
         if self.game_over:
             return self.future_handler
         else:
-            self.engine.bake_tree(time_limit=500, node_count=199_000_000)
+            self.engine.bake_tree(time_limit=500, node_count=199_000_000, max_sims=self.max_sims)
             return self
 
-action = SeekEventHandler(600, 10, 2, "A", 0)
+def load_settings():
+    with open("settings.json", "r") as f:
+        data = json.load(f)
+        return data
+
+def save_settings(c_puct, urgency, alpha, eps, max_sims, temperature, difficulty):
+    with open("settings.json", "w") as f:
+        f.write(json.dumps({
+            "c_puct": c_puct,
+            "urgency": urgency,
+            "alpha": alpha,
+            "eps": eps,
+            "max_sims": max_sims,
+            "temperature": temperature,
+            "difficulty": difficulty
+        }, indent=4))
+
+
+
+#save_settings(1.5, -0.2, 0.1, 0.25, 0, 0, 'max')
+action = SeekEventHandler(600, 10, 2, "A", 1)
 #action = AcceptEventHandler("Tiltak_Bot")
 handler: EventHandler = LoginEventHandler(os.getenv('PLAYTAK_USERNAME'), os.getenv('PASSWORD'), action.clone())
 while True:
@@ -247,6 +434,10 @@ while True:
             break
 
 
+
+# medium is beginner
+# hard is medium
+# expert is hard, except tempature is messing it up sometimes
 
 
 '''

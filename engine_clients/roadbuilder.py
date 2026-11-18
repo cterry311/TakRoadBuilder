@@ -68,6 +68,8 @@ if out is not None:
 print(time.perf_counter() - start_time)
 '''
 
+
+
 class RoadBuilder:
     def __init__(self, model_path, batch_size=256):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -172,14 +174,15 @@ class RoadBuilderGame:
         except ValueError as e:
             self.tree = tak_engine.Search(self.game.to_tps(), urgency=self.urgency, c_puct=self.c_puct, komi=self.komi, eval_cache=True, cache_max_age=2)
     @torch.no_grad()
-    def best_move(self, max_sims: int | None =None, time_limit: int | None =None, node_count: int | None =None):
+    def best_move(self, max_sims: int | None =None, time_limit: int | None =None, node_count: int | None =None, temp=0):
         seed = int(time.time() * 1000)
         if max_sims is None and time_limit is None and node_count is None:
             raise ValueError("Either max_sims or time_limit or node_count must be specified")
         if time_limit is not None:
             time_limit = time_limit / 1000.0
-        if max_sims is not None:
-            max_sims = max_sims // 2
+        if max_sims is not None and max_sims <= 0:
+            max_sims = None
+
         start = time.perf_counter()
         i = 0
         while True:
@@ -205,15 +208,27 @@ class RoadBuilderGame:
             if i == 0:
                 self.tree.add_noise(self.alpha, self.eps, seed)
             i += 1
-        return tak_engine.Tak.raw_to_ptn(self.tree.best_move_raw()), self.tree.root_stats(), self.tree.sims(), self.tree.root_q()
+
+        stats = self.tree.root_stats()
+
+        if temp <= 0:
+            chosen_move = tak_engine.Tak.raw_to_ptn(self.tree.best_move_raw())
+        else:
+            rng = np.random.default_rng()
+            moves = np.array([m for m, n, _ in stats])
+            visits = np.array([n for m, n, _ in stats])
+            p = visits ** (1.0 / temp)
+            p /= p.sum()
+            chosen_move = tak_engine.Tak.raw_to_ptn(int(rng.choice(moves, p=p)))
+        return chosen_move, stats, self.tree.sims(), self.tree.root_q()
     @torch.no_grad()
     def bake_tree(self, max_sims=None, time_limit=None, node_count=None):
         if max_sims is None and time_limit is None and node_count is None:
             raise ValueError("Either max_sims or time_limit or node_count must be specified")
         if time_limit is not None:
             time_limit = time_limit / 1000.0
-        if max_sims is not None:
-            max_sims = max_sims // 2
+        if max_sims is not None and max_sims <= 0:
+            max_sims = None
         start = time.perf_counter()
         while True:
             if max_sims is not None and self.tree.sims() >= max_sims:
