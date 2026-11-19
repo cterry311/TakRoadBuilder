@@ -244,6 +244,8 @@ class GameEventHandler(EventHandler):
         self.temperature = game_config['temperature']
         self.difficulty = game_config['difficulty']
 
+        self.move_records = []
+
         self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt',
                                       capacity=200_000_000,
                                       c_puct=self.c_puct,
@@ -280,6 +282,7 @@ class GameEventHandler(EventHandler):
 
         best_move, _, _, q = self.engine.best_move(time_limit=int(time_to_move * 1000), node_count=199_000_000, max_sims=self.max_sims, temp=self.temperature)
         self.engine.make_move(best_move)
+        self.move_records.append(best_move)
         self.current_q = q
         self.game.make_move(best_move)
         server_move = parsing.ptn_to_server(best_move)
@@ -295,6 +298,7 @@ class GameEventHandler(EventHandler):
                 ptn_move = parsing.server_to_ptn(rest)
                 self.game.make_move(ptn_move)
                 self.engine.make_move(ptn_move)
+                self.move_records.append(ptn_move)
                 self.send_move()
             elif sent_type == "Time":
                 self.current_time = int(line.split(" ")[2])
@@ -306,61 +310,82 @@ class GameEventHandler(EventHandler):
             message = " ".join(parts[2:]).lower()
             if message.startswith("roadbuilder "):
                 message_parts = message.split(" ")
+                if len(message_parts) < 2:
+                    send(f"Tell {sender_name} malformed input")
                 if message_parts[1] == 'set':
+                    if len(message_parts) != 4:
+                        send(f"Tell {sender_name} malformed input")
+                        return self
                     if message_parts[2] == 'c_puct':
+                        if not is_float(message_parts[3]):
+                            send(f"Tell {sender_name} {message_parts[3]} could not be converted to float")
+                            return self
+                        if not (0 <= float(message_parts[3]) <= 5):
+                            send(f'Tell {sender_name} {message_parts[3]} is out of range')
+                            return self
                         self.c_puct = float(message_parts[3])
                         self.difficulty = 'Custom'
-                        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt',
-                                                      capacity=200_000_000,
-                                                      c_puct=self.c_puct,
-                                                      urgency=self.urgency,
-                                                      alpha=self.alpha,
-                                                      eps=self.eps)
+                        self.restart_engine()
                         save_settings(self.c_puct, self.urgency, self.alpha, self.eps, self.max_sims, self.temperature, self.difficulty)
                         send(f"Tell {sender_name} c_punt set to {message_parts[3]}")
                     elif message_parts[2] == 'urgency':
+                        if not is_float(message_parts[3]):
+                            send(f"Tell {sender_name} {message_parts[3]} could not be converted to float")
+                            return self
+                        if not (-2 <= float(message_parts[3]) <= 2):
+                            send(f'Tell {sender_name} {message_parts[3]} is out of range')
+                            return self
                         self.urgency = float(message_parts[3])
                         self.difficulty = 'Custom'
-                        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt',
-                                                      capacity=200_000_000,
-                                                      c_puct=self.c_puct,
-                                                      urgency=self.urgency,
-                                                      alpha=self.alpha,
-                                                      eps=self.eps)
+                        self.restart_engine()
                         save_settings(self.c_puct, self.urgency, self.alpha, self.eps, self.max_sims, self.temperature,
                                       self.difficulty)
                         send(f"Tell {sender_name} urgency set to {message_parts[3]}")
                     elif message_parts[2] == 'alpha':
+                        if not is_float(message_parts[3]):
+                            send(f"Tell {sender_name} {message_parts[3]} could not be converted to float")
+                            return self
+                        if not (0.0001 <= float(message_parts[3]) <= 1):
+                            send(f'Tell {sender_name} {message_parts[3]} is out of range')
+                            return self
                         self.alpha = float(message_parts[3])
                         self.difficulty = 'Custom'
-                        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt',
-                                                      capacity=200_000_000,
-                                                      c_puct=self.c_puct,
-                                                      urgency=self.urgency,
-                                                      alpha=self.alpha,
-                                                      eps=self.eps)
+                        self.restart_engine()
                         save_settings(self.c_puct, self.urgency, self.alpha, self.eps, self.max_sims, self.temperature,
                                       self.difficulty)
                         send(f"Tell {sender_name} alpha set to {message_parts[3]}")
                     elif message_parts[2] == 'eps':
+                        if not is_float(message_parts[3]):
+                            send(f"Tell {sender_name} {message_parts[3]} could not be converted to float")
+                            return self
+                        if not (0 <= float(message_parts[3]) <= 1):
+                            send(f'Tell {sender_name} {message_parts[3]} is out of range')
+                            return self
                         self.eps = float(message_parts[3])
                         self.difficulty = 'Custom'
-                        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt',
-                                                      capacity=200_000_000,
-                                                      c_puct=self.c_puct,
-                                                      urgency=self.urgency,
-                                                      alpha=self.alpha,
-                                                      eps=self.eps)
+                        self.restart_engine()
                         save_settings(self.c_puct, self.urgency, self.alpha, self.eps, self.max_sims, self.temperature,
                                       self.difficulty)
                         send(f"Tell {sender_name} eps set to {message_parts[3]}")
                     elif message_parts[2] == 'max_sims':
+                        if not is_int(message_parts[3]):
+                            send(f"Tell {sender_name} {message_parts[3]} could not be converted to float")
+                            return self
+                        if not (0 <= int(message_parts[3])):
+                            send(f'Tell {sender_name} {message_parts[3]} is out of range')
+                            return self
                         self.max_sims = int(message_parts[3])
                         self.difficulty = 'Custom'
                         save_settings(self.c_puct, self.urgency, self.alpha, self.eps, self.max_sims, self.temperature,
                                       self.difficulty)
                         send(f"Tell {sender_name} max_sims set to {message_parts[3]}")
                     elif message_parts[2] == 'temperature':
+                        if not is_float(message_parts[3]):
+                            send(f"Tell {sender_name} {message_parts[3]} could not be converted to float")
+                            return self
+                        if not (0 <= float(message_parts[3])):
+                            send(f'Tell {sender_name} {message_parts[3]} is out of range')
+                            return self
                         self.temperature = float(message_parts[3])
                         self.difficulty = 'Custom'
                         save_settings(self.c_puct, self.urgency, self.alpha, self.eps, self.max_sims, self.temperature,
@@ -374,12 +399,7 @@ class GameEventHandler(EventHandler):
                         self.eps = DIFFICULTY_SETTINGS[message_parts[3]]['eps']
                         self.max_sims = DIFFICULTY_SETTINGS[message_parts[3]]['max_sims']
                         self.temperature = DIFFICULTY_SETTINGS[message_parts[3]]['temperature']
-                        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt',
-                                                      capacity=200_000_000,
-                                                      c_puct=self.c_puct,
-                                                      urgency=self.urgency,
-                                                      alpha=self.alpha,
-                                                      eps=self.eps)
+                        self.restart_engine()
                         save_settings(self.c_puct, self.urgency, self.alpha, self.eps, self.max_sims, self.temperature,
                                       self.difficulty)
                         send(f"Tell {sender_name} difficulty set to {message_parts[3]}")
@@ -393,6 +413,17 @@ class GameEventHandler(EventHandler):
                     send(f'Tell {sender_name} unknown command "{message_parts[1]}"')
         return self
 
+    def restart_engine(self):
+        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt',
+                                      capacity=200_000_000,
+                                      c_puct=self.c_puct,
+                                      urgency=self.urgency,
+                                      alpha=self.alpha,
+                                      eps=self.eps)
+        for move in self.move_records:
+            self.engine.make_move(move)
+
+
 
     def run_idle(self):
         if self.game_over:
@@ -400,6 +431,7 @@ class GameEventHandler(EventHandler):
         else:
             self.engine.bake_tree(time_limit=500, node_count=199_000_000, max_sims=self.max_sims)
             return self
+
 
 def load_settings():
     with open("settings.json", "r") as f:
@@ -418,6 +450,19 @@ def save_settings(c_puct, urgency, alpha, eps, max_sims, temperature, difficulty
             "difficulty": difficulty
         }, indent=4))
 
+def is_int(s: str):
+    try:
+        int(s)
+        return True
+    except ValueError:
+        return False
+
+def is_float(s: str):
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
 
 
 #save_settings(1.5, -0.2, 0.1, 0.25, 0, 0, 'max')
