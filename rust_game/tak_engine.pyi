@@ -96,6 +96,11 @@ class Tak:
             RuntimeError: if the game is already over.
         """
 
+    def hash_transform(self) -> int:
+        """
+        gets the transform applied to this positions hash
+        """
+
 
 def encode_batch(games: List[Tak], buffer: np.ndarray):
     """
@@ -148,6 +153,17 @@ def index_to_raw(index: int) -> int:
 
 def index_to_ptn(index: int) -> str:
     """take in an index, return a ptn move string"""
+
+
+def transform_ptn(mv: str, sym: int) -> str:
+    """
+    transform a move by the provided symetrical transformation
+    """
+
+def inverse_transform(sym: int) -> int:
+    """
+    get the transform that will reverse the provided transform
+    """
 
 
 import numpy.typing as npt

@@ -17,5 +17,7 @@ fn tak_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<python::Search>()?;
     m.add_function(wrap_pyfunction!(python::collect_batch, m)?)?;
     m.add_function(wrap_pyfunction!(python::submit_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(python::transform_ptn, m)?)?;
+    m.add_function(wrap_pyfunction!(python::inverse_transform, m)?)?;
     Ok(())
 }

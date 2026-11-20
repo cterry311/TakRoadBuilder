@@ -1,7 +1,7 @@
 // src/python.rs
 use pyo3::prelude::*;
 use pyo3::exceptions::{PyValueError, PyRuntimeError};
-use crate::game::{Tak, Move, GameResult};
+use crate::game::{Tak, Move, GameResult, transform_move, inverse_sym};
 use crate::tree::{Tree, collect_many, submit_many};
 
 use numpy::{PyReadwriteArrayDyn, PyArray1, PyArray3, PyArrayMethods, PyReadwriteArray1, PyReadonlyArray1};
@@ -136,6 +136,10 @@ impl PyTak {
     fn __hash__(&self) -> u64 {
         self.inner.to_hash().0
     }
+
+    fn hash_transform(&self) -> usize {
+        self.inner.to_hash().1
+    }
 }
 
 #[pyfunction]
@@ -241,8 +245,17 @@ pub fn index_to_ptn(index: usize) -> PyResult<String> {
 
 
 
+#[pyfunction]
+pub fn transform_ptn(ptn: &str, sym: usize) -> String {
+    let mv = Move::from_ptn(ptn);
+    let t_move = transform_move(mv, sym);
+    t_move.to_ptn()
+}
 
-
+#[pyfunction]
+pub fn inverse_transform(sym: usize) -> usize {
+    inverse_sym(sym)
+}
 
 
 #[pyclass]                        // Send, so collect_batch / submit_batch can hand trees to other threads

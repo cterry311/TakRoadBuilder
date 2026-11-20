@@ -1185,6 +1185,17 @@ pub fn transform_move(mv: Move, sym: usize) -> Move {
     Move::slide(sq, dir, mv.mask())
 }
 
+/// get a sym that will perfectly undo another sym transformation
+/// relfection stays, 0 rotations stay 0, 1 becomes 3, 2 stays 2, 3 becomes 1
+pub fn inverse_sym(sym: usize) -> usize {
+    if sym & 1 == 1 {
+        sym // reflections (with any rotation) are self-inverse
+    } else {
+        let r = (sym >> 1) & 3;
+        ((4 - r) & 3) << 1
+    }
+}
+
 impl PartialEq for Tak {
     fn eq(&self, other: &Self) -> bool {
         self.stacks == other.stacks
@@ -2029,6 +2040,28 @@ mod tests {
                 b.make_move(tmv);
                 assert!(transform(&a, sym).stacks == b.stacks, "sym {sym}: {}", mv.to_ptn());
             }
+        }
+    }
+
+    #[test]
+    fn test_inverse_sym() {
+        let values: Vec<usize> = vec![0, 1, 2, 3, 4, 5, 6, 7];
+        let inv_values: Vec<usize> = values.iter().map(|&v| inverse_sym(v)).collect();
+        let double_inv_values: Vec<usize> = inv_values.iter().map(|&v| inverse_sym(v)).collect();
+        assert_eq!(values, double_inv_values);
+
+        let move_1 = Move::from_ptn("a1");
+        let move_2 = Move::from_ptn("a2");
+        let move_3 = Move::from_ptn("3c2>111");
+
+        let t_move_1: Vec<Move> = values.iter().map(|&v| transform_move(move_1, v)).collect();
+        let t_move_2: Vec<Move> = values.iter().map(|&v| transform_move(move_2, v)).collect();
+        let t_move_3: Vec<Move> = values.iter().map(|&v| transform_move(move_3, v)).collect();
+
+        for i in 0..8 {
+            assert_eq!(move_1, transform_move(t_move_1[i], inv_values[i]));
+            assert_eq!(move_2, transform_move(t_move_2[i], inv_values[i]));
+            assert_eq!(move_3, transform_move(t_move_3[i], inv_values[i]));
         }
     }
 }
