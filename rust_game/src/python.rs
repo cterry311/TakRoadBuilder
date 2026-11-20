@@ -132,6 +132,10 @@ impl PyTak {
         let ptn = Move::from_raw(raw).to_ptn();
         Ok(ptn)
     }
+
+    fn __hash__(&self) -> u64 {
+        self.inner.to_hash().0
+    }
 }
 
 #[pyfunction]

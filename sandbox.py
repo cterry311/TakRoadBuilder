@@ -513,17 +513,21 @@ if __name__ == "__main__":
     # export_game(DB_PATH, gid, OUT_PATH)
     # conn = sqlite3.connect(DB_PATH)
     # print(conn.execute("SELECT COUNT(*) FROM self_play_games WHERE encoder_version = 1 ").fetchall())
-    bot = RoadBuilderGame('model_checkpoints/version_13_60.pt', capacity=200_000_000)
-    start_time = time.perf_counter()
-    bot.bake_tree(max_sims=100_000)
-    end_time = time.perf_counter()
-    print('avg depth', bot.tree.avg_depth())
-    print('max depth', bot.tree.max_depth())
-    print('node count', bot.tree.node_count())
-    print('time', end_time - start_time)
-    name = '<kestrel990>'
-    print(name[1:-1])
-    while True: num1 = 3; num2 = 4; print(num1+num2)
+
+    # bot = RoadBuilderGame('model_checkpoints/version_13_60.pt', capacity=200_000_000)
+    # start_time = time.perf_counter()
+    # bot.bake_tree(max_sims=100_000)
+    # end_time = time.perf_counter()
+    # print('avg depth', bot.tree.avg_depth())
+    # print('max depth', bot.tree.max_depth())
+    # print('node count', bot.tree.node_count())
+    # print('time', end_time - start_time)
+    # name = '<kestrel990>'
+    # print(name[1:-1])
+    # while True: num1 = 3; num2 = 4; print(num1+num2)
+
+    conn = sqlite3.connect('opening_book.db')
+    print(conn.execute('SELECT COUNT(*) FROM opening_book').fetchone())
 
 
 

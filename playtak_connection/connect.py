@@ -466,7 +466,7 @@ def is_float(s: str):
 
 
 #save_settings(1.5, -0.2, 0.1, 0.25, 0, 0, 'max')
-action = SeekEventHandler(600, 10, 2, "A", 1)
+action = SeekEventHandler(600, 10, 2, "A", 0)
 #action = AcceptEventHandler("Tiltak_Bot")
 handler: EventHandler = LoginEventHandler(os.getenv('PLAYTAK_USERNAME'), os.getenv('PASSWORD'), action.clone())
 while True:
