@@ -1,7 +1,7 @@
 import subprocess
 
 class TakticianTEI:
-    def __init__(self, size=6, cmd=("taktician", "tei")):
+    def __init__(self, size=6, halfkomi=0, cmd=("taktician", "tei")):
         self.size = size
         self.proc = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,

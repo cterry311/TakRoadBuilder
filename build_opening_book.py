@@ -15,11 +15,11 @@ MODEL.load_state_dict(info["weights"])
 MODEL.to(DEVICE).eval()  # eval() matters: BatchNorm must not use batch stats
 
 @torch.no_grad()
-def best_move(game: tak_engine.Tak, max_sims):
+def best_move(game: tak_engine.Tak, max_nodes):
     tree = tak_engine.Search(game.to_tps(), komi=2)
 
     while True:
-        if tree.sims() >= max_sims:
+        if tree.node_count() >= max_nodes:
             break
         n = tree.collect(FLAT, BATCH)
         if n == 0:  # every descent hit a finished game; already backed up
@@ -53,7 +53,7 @@ conn.execute('''
 ''')
 conn.commit()
 
-def save_move(game: tak_engine.Tak, depth, max_depth, max_sims, cuttoff=None):
+def save_move(game: tak_engine.Tak, depth, max_depth, max_nodes, cuttoff=None):
     if cuttoff is None:
         cuttoff = [0.05] * (max_depth + 1)
     hash_exists = conn.execute('''
@@ -62,7 +62,7 @@ def save_move(game: tak_engine.Tak, depth, max_depth, max_sims, cuttoff=None):
     print(hash_exists, depth)
     if hash_exists:
         return
-    move, stats, q, sims = best_move(game, max_sims)
+    move, stats, q, sims = best_move(game, max_nodes)
     conn.execute('''
         INSERT INTO opening_book (hash, predicted_move, q_value)
         VALUES (?, ?, ?)
@@ -73,8 +73,8 @@ def save_move(game: tak_engine.Tak, depth, max_depth, max_sims, cuttoff=None):
     filtered_moves = [tak_engine.Tak.raw_to_ptn(m) for m, v, q in stats if v >= (sims * cuttoff[depth])]
     for f_move in filtered_moves:
         game.make_move(f_move)
-        save_move(game, depth+1, max_depth, max_sims, cuttoff=cuttoff)
+        save_move(game, depth+1, max_depth, max_nodes, cuttoff=cuttoff)
         game.unmake_move()
 
 game = tak_engine.Tak(komi=2)
-save_move(game, 0, 6, 1_000, cuttoff=[0.03, 0.03, 0.03, 0.04, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05])
+save_move(game, 0, 3, 150_000_000, cuttoff=[0.03, 0.03, 0.03])

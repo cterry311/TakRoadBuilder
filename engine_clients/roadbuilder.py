@@ -9,6 +9,11 @@ import threading
 import queue
 import socket
 import websockets
+import sqlite3
+
+conn = sqlite3.connect('opening_book.db')
+cursor = conn.cursor()
+
 '''
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -167,16 +172,34 @@ class RoadBuilderGame:
         self.alpha = alpha
         self.eps = eps
 
+        self.ply = 0
+
     def make_move(self, move):
         self.game.make_move(move)
+        self.ply += 1
         try:
             self.tree.rebase_tree(tak_engine.Tak.ptn_to_raw(move))
         except ValueError as e:
             self.tree = tak_engine.Search(self.game.to_tps(), urgency=self.urgency, c_puct=self.c_puct, komi=self.komi, eval_cache=True, cache_max_age=2)
+
     @torch.no_grad()
-    def best_move(self, max_sims: int | None =None, time_limit: int | None =None, node_count: int | None =None, temp=0):
+    def best_move(self, max_sims: int | None =None, time_limit: int | None =None, node_count: int | None =None, depth_limit: int | None=None, temp=0):
+        if self.ply < 5:
+            game_hash = self.game.__hash__()
+            cursor.execute("""
+                           SELECT predicted_move, q_value
+                           FROM opening_book
+                           WHERE hash = ?
+                           """, (game_hash,))
+            row = cursor.fetchone()
+            if row is not None:
+                sym = self.game.hash_transform()
+                inv_sym = tak_engine.inverse_transform(sym)
+                best_move = tak_engine.transform_ptn(row[0], inv_sym)
+                return best_move, None, None, row[1]
+
         seed = int(time.time() * 1000)
-        if max_sims is None and time_limit is None and node_count is None:
+        if max_sims is None and time_limit is None and node_count is None and depth_limit is None:
             raise ValueError("Either max_sims or time_limit or node_count must be specified")
         if time_limit is not None:
             time_limit = time_limit / 1000.0
@@ -191,6 +214,8 @@ class RoadBuilderGame:
             if time_limit is not None and time.perf_counter() - start >= time_limit:
                 break
             if node_count is not None and self.tree.node_count() >= node_count:
+                break
+            if depth_limit is not None and self.tree.avg_depth() >= depth_limit:
                 break
 
             n = self.tree.collect(self.flat, self.BATCH)
@@ -221,6 +246,7 @@ class RoadBuilderGame:
             p /= p.sum()
             chosen_move = tak_engine.Tak.raw_to_ptn(int(rng.choice(moves, p=p)))
         return chosen_move, stats, self.tree.sims(), self.tree.root_q()
+
     @torch.no_grad()
     def bake_tree(self, max_sims=None, time_limit=None, node_count=None):
         if max_sims is None and time_limit is None and node_count is None:

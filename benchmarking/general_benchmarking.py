@@ -1,0 +1,188 @@
+from engine_clients.roadbuilder import RoadBuilder, RoadBuilderGame
+from engine_clients.teiInterface import TeiEngine
+import tak_engine
+
+
+def save_moves_to_ptn(game, moves, player_white, player_black, save_path):
+    ptn_game = f'[size "6"]\n[player1 "{player_white}"]\n[player2 "{player_black}"]\n[komi "2"]\n'
+
+    for i, move in enumerate(moves):
+        if i % 2 == 0:
+            ptn_game += f'{(i // 2 ) + 1}. '
+        ptn_game += move + ' '
+        if i % 2 == 1:
+            ptn_game += '\n'
+
+    with open(save_path, 'w') as f:
+        f.write(ptn_game)
+
+
+def roadbuilder_vs_tei(num_games, model_path, exe, time_limit: int=None, node_limit: int=None, depth_limit: int=None, save_games=True):
+    tei_engine = TeiEngine(exe=exe, half_komi=4)
+
+    wins = 0
+    losses = 0
+    draws = 0
+
+    white_wins = 0
+    black_wins = 0
+
+    white_draws = 0
+    black_draws = 0
+
+    white_losses = 0
+    black_losses = 0
+
+    for i in range(num_games):
+        game = tak_engine.Tak(komi=2)
+        r_builder = RoadBuilderGame(model_path)
+        moves = []
+        k = i
+        while True:
+            if k % 2 == 0:
+                move, _, _, _ = r_builder.best_move(max_sims=node_limit, time_limit=time_limit, depth_limit=depth_limit)
+                moves.append(move)
+
+                game.make_move(move)
+                r_builder.make_move(move)
+
+                if game.result() != 0:
+                    break
+            else:
+                move = tei_engine.best_move(moves=moves, movetime_ms=time_limit, nodes=node_limit, depth=depth_limit)
+                moves.append(move)
+
+                game.make_move(move)
+                r_builder.make_move(move)
+
+                if game.result() != 0:
+                    break
+            k += 1
+        game_result = game.result()
+        if game_result == 3:
+            draws += 1
+            if i % 2 == 0:
+                white_draws += 1
+            else:
+                black_draws += 1
+        elif i % 2 == 0:
+            if game_result == 1:
+                wins += 1
+                white_wins += 1
+            elif game_result == 2:
+                losses += 1
+                white_losses += 1
+            else:
+                raise ValueError(f'game result {game_result} not recognized')
+        elif i % 2 == 1:
+            if game_result == 2:
+                wins += 1
+                black_wins += 1
+            elif game_result == 1:
+                losses += 1
+                black_losses += 1
+            else:
+                raise ValueError(f'game result {game_result} not recognized')
+        else:
+            raise ValueError(f'game result {game_result} not recognized')
+        if save_games:
+            model_name = model_path.split('/')[-1].split('.')[0]
+            engine_name = exe.split('/')[-1].split('.')[0]
+
+            player_white = model_name if i % 2 == 0 else engine_name
+            player_black = model_name if i % 2 == 1 else engine_name
+            save_moves_to_ptn(game, moves, player_white, player_black, f'ptn_files/{model_name}_vs_{engine_name}_{i}.ptn')
+    model_name = model_path.split('/')[-1].split('.')[0]
+    engine_name = exe.split('/')[-1].split('.')[0]
+    print(f"{model_name} vs {engine_name}")
+    print(f'overview: wins: {wins}, draws: {draws}, losses: {losses}, expected_value: {(wins - losses) / num_games}')
+    print(f'white: wins: {white_wins}, draws: {white_draws}, losses: {white_losses}, expected_value: {(white_wins - white_losses) / (white_wins + white_draws + white_losses)}')
+    print(f'black: wins: {black_wins}, draws: {black_draws}, losses: {black_losses}, expected_value: {(black_wins - black_losses) / (black_wins + black_draws + black_losses)}')
+
+
+
+def tei_vs_tei(num_games, exe1, exe2, time_limit: int=None, node_limit: int=None, depth_limit: int=None, save_games=True):
+    tei_engine_1 = TeiEngine(exe=exe1, half_komi=4)
+    tei_engine_2 = TeiEngine(exe=exe2, half_komi=4)
+
+    wins = 0
+    losses = 0
+    draws = 0
+
+    white_wins = 0
+    black_wins = 0
+
+    white_draws = 0
+    black_draws = 0
+
+    white_losses = 0
+    black_losses = 0
+
+    for i in range(num_games):
+        game = tak_engine.Tak(komi=2)
+        moves = []
+        k = i
+        while True:
+            if k % 2 == 0:
+                move = tei_engine_1.best_move(moves=moves, movetime_ms=time_limit, nodes=node_limit, depth=depth_limit)
+                moves.append(move)
+
+                game.make_move(move)
+
+                if game.result() != 0:
+                    break
+            else:
+                move = tei_engine_2.best_move(moves=moves, movetime_ms=time_limit, nodes=node_limit, depth=depth_limit)
+                moves.append(move)
+
+                game.make_move(move)
+
+                if game.result() != 0:
+                    break
+            k += 1
+        game_result = game.result()
+        if game_result == 3:
+            draws += 1
+            if i % 2 == 0:
+                white_draws += 1
+            else:
+                black_draws += 1
+        elif i % 2 == 0:
+            if game_result == 1:
+                wins += 1
+                white_wins += 1
+            elif game_result == 2:
+                losses += 1
+                white_losses += 1
+            else:
+                raise ValueError(f'game result {game_result} not recognized')
+        elif i % 2 == 1:
+            if game_result == 2:
+                wins += 1
+                black_wins += 1
+            elif game_result == 1:
+                losses += 1
+                black_losses += 1
+            else:
+                raise ValueError(f'game result {game_result} not recognized')
+        else:
+            raise ValueError(f'game result {game_result} not recognized')
+        if save_games:
+            engine_name_1 = exe1.split('/')[-1].split('.')[0]
+            engine_name_2 = exe2.split('/')[-1].split('.')[0]
+
+            player_white = engine_name_1 if i % 2 == 0 else engine_name_2
+            player_black = engine_name_1 if i % 2 == 1 else engine_name_2
+            save_moves_to_ptn(game, moves, player_white, player_black,
+                              f'ptn_files/{engine_name_1}__vs__{engine_name_2}__{i}.ptn')
+    engine_name_1 = exe1.split('/')[-1].split('.')[0]
+    engine_name_2 = exe2.split('/')[-1].split('.')[0]
+    print(f"{engine_name_1} vs {engine_name_2}")
+    print(f'overview: wins: {wins}, draws: {wins}, losses: {losses}, expected_value: {(wins - losses) / num_games}')
+    print(
+        f'white: wins: {white_wins}, draws: {white_draws}, losses: {white_losses}, expected_value: {(white_wins - white_losses) / (white_wins + white_draws + white_losses)}')
+    print(
+        f'black: wins: {black_wins}, draws: {black_draws}, losses: {black_losses}, expected_value: {(black_wins - black_losses) / (black_wins + black_draws + black_losses)}')
+
+
+roadbuilder_vs_tei(10, 'model_checkpoints/version_13_60.pt', 'taktician.exe', save_games=True, time_limit=1000)
