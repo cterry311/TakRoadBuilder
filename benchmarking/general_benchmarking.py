@@ -33,7 +33,7 @@ def roadbuilder_vs_tei(num_games, model_path, exe, time_limit: int=None, node_li
     white_losses = 0
     black_losses = 0
 
-    for i in range(num_games):
+    for i in range(82, num_games):
         game = tak_engine.Tak(komi=2)
         r_builder = RoadBuilderGame(model_path)
         moves = []
@@ -185,4 +185,59 @@ def tei_vs_tei(num_games, exe1, exe2, time_limit: int=None, node_limit: int=None
         f'black: wins: {black_wins}, draws: {black_draws}, losses: {black_losses}, expected_value: {(black_wins - black_losses) / (black_wins + black_draws + black_losses)}')
 
 
-roadbuilder_vs_tei(10, 'model_checkpoints/version_13_60.pt', 'taktician.exe', save_games=True, time_limit=1000)
+# print('games against roadbuilder')
+# roadbuilder_vs_tei(200, 'model_checkpoints/version_13_60.pt', 'taktician.exe', save_games=True, time_limit=2000)
+# print()
+# roadbuilder_vs_tei(200, 'model_checkpoints/version_13_60.pt', 'tiltak.exe', save_games=True, time_limit=2000)
+# print()
+print('finishing benchmarking on roadbuilder vs topaz')
+roadbuilder_vs_tei(200, 'model_checkpoints/version_13_60.pt', 'topaz.exe', save_games=True, time_limit=2000)
+print()
+# roadbuilder_vs_tei(200, 'model_checkpoints/version_13_60.pt', 'takson.exe', save_games=True, time_limit=2000)
+# print()
+# roadbuilder_vs_tei(200, 'model_checkpoints/version_13_60.pt', 'syntaks.exe', save_games=True, time_limit=2000)
+# print()
+# print()
+# print('tei against tei')
+# print('taktition against tei')
+# tei_vs_tei(100, 'taktician.exe', 'tiltak.exe', save_games=True, time_limit=2000)
+# print()
+# tei_vs_tei(100, 'taktician.exe', 'topaz.exe', save_games=True, time_limit=2000)
+# print()
+# tei_vs_tei(100, 'taktician.exe', 'takson.exe', save_games=True, time_limit=2000)
+# print()
+# tei_vs_tei(100, 'taktician.exe', 'syntaks.exe', save_games=True, time_limit=2000)
+# print()
+# print('tiltak against tei')
+# tei_vs_tei(100, 'tiltak.exe', 'topaz.exe', save_games=True, time_limit=2000)
+# print()
+# tei_vs_tei(100, 'tiltak.exe', 'takson.exe', save_games=True, time_limit=2000)
+# print()
+# tei_vs_tei(100, 'tiltak.exe', 'syntaks.exe', save_games=True, time_limit=2000)
+# print()
+# print('topaz against tei')
+# tei_vs_tei(100, 'topaz.exe', 'takson.exe', save_games=True, time_limit=2000)
+# print()
+# tei_vs_tei(100, 'topaz.exe', 'syntaks.exe', save_games=True, time_limit=2000)
+# print()
+# print('takson against tei')
+# tei_vs_tei(100, 'takson.exe', 'syntaks.exe', save_games=True, time_limit=2000)
+# print()
+
+
+
+
+# games against roadbuilder
+# version_13_60 vs taktician
+# overview: wins: 199, draws: 0, losses: 1, expected_value: 0.99
+# white: wins: 100, draws: 0, losses: 0, expected_value: 1.0
+# black: wins: 99, draws: 0, losses: 1, expected_value: 0.98
+# +920 elo
+# interval [+727, inf) because of the massive gap in strength, there is a substantial limit on how accurate I can be and how useful these results are
+#
+# version_13_60 vs tiltak
+# overview: wins: 190, draws: 2, losses: 8, expected_value: 0.91
+# white: wins: 100, draws: 0, losses: 0, expected_value: 1.0
+# black: wins: 90, draws: 2, losses: 8, expected_value: 0.82
+# +531 elo
+# interval [438, 709]

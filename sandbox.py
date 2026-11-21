@@ -526,8 +526,42 @@ if __name__ == "__main__":
     # print(name[1:-1])
     # while True: num1 = 3; num2 = 4; print(num1+num2)
 
-    conn = sqlite3.connect('opening_book.db')
-    print(conn.execute('SELECT COUNT(*) FROM opening_book').fetchone())
+    # conn = sqlite3.connect('opening_book.db')
+    # print(conn.execute('SELECT COUNT(*) FROM opening_book').fetchone())
+
+
+    # import onnx
+    #
+    # onnx.checker.check_model(onnx.load("model_releases/release_1_1.onnx"))
+    # print("ONNX model is valid!")
+
+
+    import numpy as np
+    import onnxruntime as ort
+    import torch
+    from model.tak_net import TakNet
+
+    info = torch.load('model_checkpoints/version_13_60.pt')
+    model = TakNet(**info["params"])
+    model.load_state_dict(info["weights"])
+    model.eval()
+
+    sess = ort.InferenceSession(
+        "model_releases/release_1_1.onnx",
+        providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    print([o.name for o in sess.get_outputs()])  # should be ['policy', 'value']
+    print([o.shape for o in sess.get_outputs()])  # batch dim should say 'batch', not a number
+
+    for bs in [1, 2, 7, 32]:
+        x = torch.randn(bs, 25, 6, 6)
+        with torch.no_grad():
+            ref_policy, ref_value = model(x)
+        out_policy, out_value = sess.run(None, {"input": x.numpy()})
+
+        print(f"batch {bs}: "
+              f"policy {out_policy.shape} diff {np.abs(ref_policy.numpy() - out_policy).max():.2e} | "
+              f"value {out_value.shape} diff {np.abs(ref_value.numpy() - out_value).max():.2e}")
 
 
 

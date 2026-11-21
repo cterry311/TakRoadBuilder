@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-IN_CHANNELS = 6 + (2 * 6) + 1 + 1 + 2 + 2 + 1
+IN_CHANNELS = 6 + (2 * 6) + 1 + 1 + 2 + 2 + 1 # 25
 
 TRUNK_CHANNELS = 64
 TRUNK_BLOCKS = 6
