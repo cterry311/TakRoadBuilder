@@ -16,3 +16,5 @@ PLAYTAK_BOT_PROTOCOL.md
 .env
 TAK_BOT_PORT.md
 TEI_DOCS.md
+self_play_temp.db-shm
+self_play_temp.db-wal

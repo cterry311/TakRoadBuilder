@@ -33,7 +33,7 @@ def roadbuilder_vs_tei(num_games, model_path, exe, time_limit: int=None, node_li
     white_losses = 0
     black_losses = 0
 
-    for i in range(82, num_games):
+    for i in range(179, num_games):
         game = tak_engine.Tak(komi=2)
         r_builder = RoadBuilderGame(model_path)
         moves = []
@@ -178,7 +178,7 @@ def tei_vs_tei(num_games, exe1, exe2, time_limit: int=None, node_limit: int=None
     engine_name_1 = exe1.split('/')[-1].split('.')[0]
     engine_name_2 = exe2.split('/')[-1].split('.')[0]
     print(f"{engine_name_1} vs {engine_name_2}")
-    print(f'overview: wins: {wins}, draws: {wins}, losses: {losses}, expected_value: {(wins - losses) / num_games}')
+    print(f'overview: wins: {wins}, draws: {draws}, losses: {losses}, expected_value: {(wins - losses) / num_games}')
     print(
         f'white: wins: {white_wins}, draws: {white_draws}, losses: {white_losses}, expected_value: {(white_wins - white_losses) / (white_wins + white_draws + white_losses)}')
     print(
@@ -190,39 +190,58 @@ def tei_vs_tei(num_games, exe1, exe2, time_limit: int=None, node_limit: int=None
 # print()
 # roadbuilder_vs_tei(200, 'model_checkpoints/version_13_60.pt', 'tiltak.exe', save_games=True, time_limit=2000)
 # print()
-print('finishing benchmarking on roadbuilder vs topaz')
-roadbuilder_vs_tei(200, 'model_checkpoints/version_13_60.pt', 'topaz.exe', save_games=True, time_limit=2000)
-print()
+# print('finishing benchmarking on roadbuilder vs topaz')
+# roadbuilder_vs_tei(200, 'model_checkpoints/version_13_60.pt', 'topaz.exe', save_games=True, time_limit=2000)
+# print()
 # roadbuilder_vs_tei(200, 'model_checkpoints/version_13_60.pt', 'takson.exe', save_games=True, time_limit=2000)
 # print()
 # roadbuilder_vs_tei(200, 'model_checkpoints/version_13_60.pt', 'syntaks.exe', save_games=True, time_limit=2000)
 # print()
+# roadbuilder_vs_tei(200, 'model_checkpoints/version_13_60.pt', 'takzero.exe', save_games=True, time_limit=2000)
 # print()
 # print('tei against tei')
 # print('taktition against tei')
 # tei_vs_tei(100, 'taktician.exe', 'tiltak.exe', save_games=True, time_limit=2000)
 # print()
-# tei_vs_tei(100, 'taktician.exe', 'topaz.exe', save_games=True, time_limit=2000)
-# print()
-# tei_vs_tei(100, 'taktician.exe', 'takson.exe', save_games=True, time_limit=2000)
-# print()
-# tei_vs_tei(100, 'taktician.exe', 'syntaks.exe', save_games=True, time_limit=2000)
-# print()
-# print('tiltak against tei')
-# tei_vs_tei(100, 'tiltak.exe', 'topaz.exe', save_games=True, time_limit=2000)
-# print()
-# tei_vs_tei(100, 'tiltak.exe', 'takson.exe', save_games=True, time_limit=2000)
-# print()
-# tei_vs_tei(100, 'tiltak.exe', 'syntaks.exe', save_games=True, time_limit=2000)
-# print()
-# print('topaz against tei')
-# tei_vs_tei(100, 'topaz.exe', 'takson.exe', save_games=True, time_limit=2000)
-# print()
-# tei_vs_tei(100, 'topaz.exe', 'syntaks.exe', save_games=True, time_limit=2000)
-# print()
-# print('takson against tei')
-# tei_vs_tei(100, 'takson.exe', 'syntaks.exe', save_games=True, time_limit=2000)
-# print()
+print('tiltak against tei')
+tei_vs_tei(100, 'tiltak.exe', 'topaz.exe', save_games=True, time_limit=2000)
+print()
+
+print('topaz against tei')
+tei_vs_tei(100, 'topaz.exe', 'takson.exe', save_games=True, time_limit=2000)
+print()
+tei_vs_tei(100, 'topaz.exe', 'syntaks.exe', save_games=True, time_limit=2000)
+print()
+print('takson against tei')
+tei_vs_tei(100, 'takson.exe', 'syntaks.exe', save_games=True, time_limit=2000)
+print()
+
+print('takzero vs tei')
+tei_vs_tei(100, 'takzero.exe', 'tiltak.exe', save_games=True, time_limit=2000)
+print()
+tei_vs_tei(100, 'takzero.exe', 'topaz.exe', save_games=True, time_limit=2000)
+print()
+tei_vs_tei(100, 'takzero.exe', 'takson.exe', save_games=True, time_limit=2000)
+print()
+tei_vs_tei(100, 'takzero.exe', 'syntaks.exe', save_games=True, time_limit=2000)
+print()
+
+
+tei_vs_tei(100, 'tiltak.exe', 'takson.exe', save_games=True, time_limit=2000)
+print()
+
+tei_vs_tei(100, 'takzero.exe', 'taktician.exe', save_games=True, time_limit=2000)
+print()
+tei_vs_tei(100, 'taktician.exe', 'topaz.exe', save_games=True, time_limit=2000)
+print()
+tei_vs_tei(100, 'taktician.exe', 'takson.exe', save_games=True, time_limit=2000)
+print()
+tei_vs_tei(100, 'taktician.exe', 'syntaks.exe', save_games=True, time_limit=2000)
+print()
+
+
+tei_vs_tei(100, 'tiltak.exe', 'syntaks.exe', save_games=True, time_limit=2000)
+print()
 
 
 
@@ -241,3 +260,40 @@ print()
 # black: wins: 90, draws: 2, losses: 8, expected_value: 0.82
 # +531 elo
 # interval [438, 709]
+#
+# ins: 19, losses: 165, draws: 16, expected_value: 0.135
+# white wins: 8, white losses: 84, white draws: 8, expected_value: 0.12
+# black wins: 11, black losses: 81, black draws: 8, expected_value: 0.15
+# -323 elo
+# range [-408, -261]
+#
+# version_13_60 vs topaz
+# wins: 13, losses: 166, draws: 21, expected_value: -0.765
+# white wins: 10, white losses: 75, white draws: 15, expected_value: -0.65
+# black wins: 3, black losses: 91, black draws: 6, expected_value: -0.88
+# -350 elo
+# interval [-442, -285]
+#
+# version_13_60 vs takson
+# overview: wins: 0, draws: 0, losses: 200, expected_value: -1.0
+# white: wins: 0, draws: 0, losses: 100, expected_value: -1.0
+# black: wins: 0, draws: 0, losses: 100, expected_value: -1.0
+# NaN elo
+# interval (-inf, -727]
+#
+# version_13_60 vs syntaks
+# overview: wins: 0, draws: 0, losses: 200, expected_value: -1.0
+# white: wins: 0, draws: 0, losses: 100, expected_value: -1.0
+# black: wins: 0, draws: 0, losses: 100, expected_value: -1.0
+# NaN elo
+# interval (-inf, -727]
+#
+
+
+
+# taktician vs tiltak
+# overview: wins: 1, draws: 0 losses: 99, expected_value: -0.98
+# white: wins: 1, draws: 0, losses: 49, expected_value: -0.96
+# black: wins: 0, draws: 0, losses: 50, expected_value: -1.0
+# -920 elo
+# interval [+727, inf)

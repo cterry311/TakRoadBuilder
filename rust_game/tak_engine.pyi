@@ -101,6 +101,11 @@ class Tak:
         gets the transform applied to this positions hash
         """
 
+    def side_to_move(self) -> str:
+        """
+        gets the side to move as the string litteral 'white' or 'black'
+        """
+
 
 def encode_batch(games: List[Tak], buffer: np.ndarray):
     """

@@ -1,7 +1,7 @@
 // src/python.rs
 use pyo3::prelude::*;
 use pyo3::exceptions::{PyValueError, PyRuntimeError};
-use crate::game::{Tak, Move, GameResult, transform_move, inverse_sym};
+use crate::game::{Tak, Move, GameResult, transform_move, inverse_sym, Color};
 use crate::tree::{Tree, collect_many, submit_many};
 
 use numpy::{PyReadwriteArrayDyn, PyArray1, PyArray3, PyArrayMethods, PyReadwriteArray1, PyReadonlyArray1};
@@ -139,6 +139,13 @@ impl PyTak {
 
     fn hash_transform(&self) -> usize {
         self.inner.to_hash().1
+    }
+
+    fn side_to_move(&self) -> String {
+        match self.inner.side_to_move() {
+            Color::White => "white".to_string(),
+            Color::Black => "black".to_string(),
+        }
     }
 }
 

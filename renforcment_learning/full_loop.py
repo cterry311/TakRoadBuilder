@@ -11,6 +11,8 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
 import shutil
 import random
+from engine_clients.teiInterface import TeiEngine
+
 
 # connect to google drive
 
@@ -259,6 +261,14 @@ NUM_GAMES = 300
 EVAL_CACHE = True        # reuse model evals for repeated / symmetric positions within a game
 CACHE_MAX_AGE = 2        # drop cache entries unused for this many moves
 TEMP = 0.5
+
+NUM_ENGINE_GAMES = 70
+ENGINE_MAX_SIMS = 5_000
+ENGINE_PROBS = (
+    (0.1, 'tiltak.exe'),
+    (0.5, 'topaz.exe'),
+    (0.4, 'takson.exe'),
+)
 
 
 def setup_db(db_path=SELF_PLAY_DB):
@@ -557,6 +567,125 @@ class SelfPlayRunner:
         copy_db(conn, f'self_play_records/{save_path}')
 
 
+
+@torch.no_grad()
+def run_engine_games(model_path, engine_probs, num_games, komi, max_sims, c_puct, urgency, alpha, eps, max_ply, conn: sqlite3.Connection):
+    """plays games against strong engines for training"""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    info = torch.load(model_path, map_location=device)
+    model = TakNet(**info["params"])
+    model.load_state_dict(info["weights"])
+    model.to(device).eval()
+
+    BATCH = 256
+    buf = np.zeros((BATCH, 25, 6, 6), dtype=np.float32)
+    flat = buf.reshape(-1)
+
+    for i in range(num_games):
+        selection = random.random()
+        exe_path = None
+        total_prob = 0.0
+        for prob, path in engine_probs:
+            total_prob += prob
+            if selection < total_prob:
+                exe_path = path
+                break
+        engine = TeiEngine(exe=exe_path, half_komi=komi*2)
+        game = tak_engine.Tak(komi=komi)
+        tree = tak_engine.Search(game.to_tps(), urgency=urgency, c_puct=c_puct, komi=komi)
+        seed = random.randint(0, 1 << 31)
+        highest_ply = 0
+        end_reason = None
+        records = []
+        for ply in range(max_ply):
+            highest_ply = ply
+            k = i + ply
+            if k % 2 == 0:
+                j = 0
+                while True:
+                    if max_sims is not None and tree.sims() >= max_sims:
+                        break
+
+                    n = tree.collect(flat, BATCH)
+                    if n == 0:  # every descent hit a finished game; already backed up
+                        continue
+
+                    x = torch.from_numpy(buf[:n]).to(device)
+                    policy, value = model(x)
+
+                    pol = torch.softmax(policy.flatten(1), dim=1).cpu().numpy().reshape(-1)
+                    vp = torch.softmax(value, dim=1)
+                    val = (vp[:, 2] - vp[:, 0]).cpu().numpy()
+
+                    tree.submit(pol, val)  # row i here must be row i of buf
+                    if j == 0:
+                        tree.add_noise(alpha, eps, seed + k)
+                    j += 1
+                chosen_move = tree.best_move_raw()
+                root_info = tree.root_stats()
+                visit_counts = [(x[0], x[1]) for x in root_info]
+                root_q = tree.root_q()
+                tps = game.to_tps()
+                records.append((tps, ply, chosen_move, visit_counts, root_q))
+                game.make_move_raw(chosen_move)
+                if game.result() != 0:
+                    end_reason = 'game_over'
+                    break
+                try:
+                    tree.rebase_tree(chosen_move)
+                except ValueError:
+                    tree = tak_engine.Search(game.to_tps(), urgency=urgency, c_puct=c_puct, komi=komi)
+            else:
+                chosen_move = engine.best_move(position=game.to_tps(), nodes=max_sims)
+                move_raw = tak_engine.Tak.ptn_to_raw(chosen_move)
+                game.make_move_raw(move_raw)
+                if game.result() != 0:
+                    end_reason = 'game_over'
+                    break
+                try:
+                    tree.rebase_tree(move_raw)
+                except ValueError:
+                    tree = tak_engine.Search(game.to_tps(), urgency=urgency, c_puct=c_puct, komi=komi)
+            if game.result() != 0:
+                end_reason = 'game_over'
+                break
+            if ply >= max_ply:
+                end_reason = 'max_ply'
+                break
+
+        game_id = conn.execute('''
+                               INSERT INTO self_play_games (seed, model, encoder_version, komi, max_sims, batch_size,
+                                                            c_puct,
+                                                            urgency, alpha, eps, temp_plies, n_plies, outcome,
+                                                            end_reason)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                               ''', (
+                                   seed, model_path, ENCODER_VERSION, komi, max_sims, -1,
+                                   c_puct, urgency, alpha, eps, -1,
+                                   highest_ply, game.result(), end_reason
+                               )).lastrowid
+        conn.executemany('''
+                         INSERT INTO self_play_positions (game_id, ply, tps, move_raw, sampled, q, visits)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)
+                         ''', [
+                             (game_id, ply, tps, mv, 0, q, pack_visits(visits))
+                             for tps, ply, mv, visits, q in records
+                         ])
+        if game.result() == 3:
+            own_outcome = 'draw'
+        elif game.result() == 1:
+            own_outcome = 'win' if i % 2 == 0 else 'loss'
+        elif game.result() == 2:
+            own_outcome = 'loss' if i % 2 == 0 else 'win'
+        else:
+            own_outcome = 'unfinished'
+        print(f'Game {game_id} played against {exe_path}, outcome: {own_outcome}, plys: {highest_ply}')
+        conn.commit()
+        engine.close()
+
+
+
 def run_self_play(model_path, save_path):
     model_path = f"model_checkpoints/{model_path}"
     conn = setup_db()
@@ -566,6 +695,9 @@ def run_self_play(model_path, save_path):
     print('model loaded...')
     runner.run(NUM_GAMES, conn, save_path)
     print(f'finished self play with model {model_path}')
+    run_engine_games(model_path, ENGINE_PROBS, NUM_ENGINE_GAMES, SP_KOMI, ENGINE_MAX_SIMS, C_PUCT, URGENCY, ALPHA, EPS, MAX_PLY, conn)
+    conn.commit()
+    copy_db(conn, f'self_play_records/{save_path}')  # add this
     conn.commit()
     conn.close()
 
@@ -593,7 +725,7 @@ BATCH = 128
 LR = 3e-4                             # lower than supervised (guess, tune)
 DECAY = 3e-2
 W_V = 0.5                             # value cross-entropy on game outcome
-GAMMA = 0.5                          # value vs search q
+GAMMA = 0.05                          # value vs search q
 BETA = 0.0                            # advantage term; set 0 to disable
 ADV_CLIP = 1.0
 VAL_FRAC = 0.05
@@ -1050,8 +1182,8 @@ def run_training(LOAD_PATH, SAVE_PATH, version):
 # iterate between self play and training, save checkpoints to drive periodically
 
 # set these to the newest model on drive before (re)starting the loop
-model_version = 13
-model_sub_version = 26
+model_version = 14
+model_sub_version = 10
 while True:
     model_path = f'version_{model_version}_{model_sub_version}.pt'
     model_save_path = f'version_{model_version}_{model_sub_version + 1}.pt'
