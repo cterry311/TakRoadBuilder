@@ -1182,8 +1182,8 @@ def run_training(LOAD_PATH, SAVE_PATH, version):
 # iterate between self play and training, save checkpoints to drive periodically
 
 # set these to the newest model on drive before (re)starting the loop
-model_version = 15
-model_sub_version = 10
+model_version = 14
+model_sub_version = 15
 while True:
     model_path = f'version_{model_version}_{model_sub_version}.pt'
     model_save_path = f'version_{model_version}_{model_sub_version + 1}.pt'
