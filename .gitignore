@@ -18,3 +18,6 @@ TAK_BOT_PORT.md
 TEI_DOCS.md
 self_play_temp.db-shm
 self_play_temp.db-wal
+/tei/build_env
+/tei/dist
+/tei/build

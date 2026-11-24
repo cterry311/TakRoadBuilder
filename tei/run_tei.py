@@ -1,14 +1,78 @@
-import tak_engine
-import onnxruntime as ort
-import numpy as np
+import os
+import glob
 import time
 import threading
 import queue
 import sys
+
+
+def _system_path_entries():
+    """PATH entries from this process plus the persisted Machine/User PATH in the
+    registry, so CUDA added to PATH after the parent process started is still found."""
+    entries = os.environ.get("PATH", "").split(os.pathsep)
+    try:
+        import winreg
+        for root, key in ((winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+                          (winreg.HKEY_CURRENT_USER, r"Environment")):
+            try:
+                with winreg.OpenKey(root, key) as k:
+                    val, _ = winreg.QueryValueEx(k, "Path")
+                    entries += os.path.expandvars(val).split(os.pathsep)
+            except OSError:
+                pass
+    except ImportError:
+        pass
+    return [e for e in entries if e]
+
+
+def _find_dll_dir(dll_glob, extra_roots):
+    """Return the first directory containing a file matching dll_glob, searching PATH
+    entries (and their x64 / <cuda ver>\\x64 subfolders) and then extra_roots recursively."""
+    for d in _system_path_entries():
+        for cand in (d, os.path.join(d, "x64")):
+            if glob.glob(os.path.join(cand, dll_glob)):
+                return cand
+        # cuDNN 9 layout: bin\<cuda version>\x64\cudnn64_9.dll -- prefer CUDA 13.x
+        hits = sorted(glob.glob(os.path.join(d, "13.*", "x64", dll_glob)), reverse=True)
+        if hits:
+            return os.path.dirname(hits[0])
+    for root in extra_roots:
+        hits = sorted(glob.glob(os.path.join(root, "**", dll_glob), recursive=True), reverse=True)
+        hits = [h for h in hits if "\\12." not in h] or hits  # prefer the CUDA 13 build
+        if hits:
+            return os.path.dirname(hits[0])
+    return None
+
+
+def setup_system_cuda():
+    """Make the system-installed CUDA 13 + cuDNN 9 DLLs loadable by onnxruntime-gpu."""
+    if os.name != "nt":
+        return
+    pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+    cuda_roots = [os.environ.get("CUDA_PATH", ""), os.path.join(pf, "NVIDIA GPU Computing Toolkit", "CUDA")]
+    cudnn_roots = [os.environ.get("CUDNN_PATH", ""), os.path.join(pf, "NVIDIA", "CUDNN")]
+    dirs = [
+        _find_dll_dir("cublasLt64_13.dll", [r for r in cuda_roots if r]),
+        _find_dll_dir("cudart64_13.dll", [r for r in cuda_roots if r]),
+        _find_dll_dir("cudnn64_9.dll", [r for r in cudnn_roots if r]),
+    ]
+    for d in dict.fromkeys(d for d in dirs if d):
+        os.add_dll_directory(d)
+        os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+    if None in dirs:
+        print("warning: could not locate CUDA 13 / cuDNN 9 DLLs; falling back to CPU", file=sys.stderr)
+
+
+setup_system_cuda()
+
+import tak_engine
+import onnxruntime as ort
+import numpy as np
 from scipy.special import softmax
 
-MODEL_PATH = ".model_releases/release_1_1.onnx"
-ort.preload_dlls()
+
+MODEL_PATH = r"C:\Users\cterry\PersonalCode\Capstone\tak\model_releases\release_1_1.onnx"
+
 
 
 def get_lines():
@@ -75,7 +139,7 @@ while True:
         send('readyok')
     elif line.startswith('teinewgame'):
         sess = ort.InferenceSession(
-            "model_releases/release_1_1.onnx",
+            MODEL_PATH,
             providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
         )
         state['model_sess'] = sess
@@ -140,7 +204,10 @@ while True:
                         try:
                             state['tree'].rebase_tree(tak_engine.Tak.ptn_to_raw(moves[i]))
                         except ValueError:
-                            state['tree'] = tak_engine.Search(tps_pos, urgency=state['Urgency'], c_puct=state['CPuct'], komi=2, capacity=200_000_000)
+                            temp_game = tak_engine.Tak.from_tps(tps_pos, komi=2)
+                            for move in moves:
+                                temp_game.make_move(move.replace('*', ''))
+                            state['tree'] = tak_engine.Search(temp_game.to_tps(), urgency=state['Urgency'], c_puct=state['CPuct'], komi=2, capacity=200_000_000)
                             break
                     state['moves'] = moves
 
@@ -251,8 +318,8 @@ while True:
             for move in state['moves']:
                 temp_game.make_move(move.replace('*', ''))
 
-            increment_index = 2 if temp_game.side_to_move() == 'white' else 4
-            time_index = 6 if temp_game.side_to_move() == 'white' else 8
+            increment_index = 6 if temp_game.side_to_move() == 'white' else 8
+            time_index = 2 if temp_game.side_to_move() == 'white' else 4
 
             time_increment = int(parts[increment_index]) / 1000.0
             current_time = int(parts[time_index]) / 1000.0

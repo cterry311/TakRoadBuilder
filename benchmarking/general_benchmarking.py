@@ -33,7 +33,7 @@ def roadbuilder_vs_tei(num_games, model_path, exe, time_limit: int=None, node_li
     white_losses = 0
     black_losses = 0
 
-    for i in range(179, num_games):
+    for i in range(num_games):
         game = tak_engine.Tak(komi=2)
         r_builder = RoadBuilderGame(model_path)
         moves = []
@@ -203,45 +203,49 @@ def tei_vs_tei(num_games, exe1, exe2, time_limit: int=None, node_limit: int=None
 # print('taktition against tei')
 # tei_vs_tei(100, 'taktician.exe', 'tiltak.exe', save_games=True, time_limit=2000)
 # print()
-print('tiltak against tei')
-tei_vs_tei(100, 'tiltak.exe', 'topaz.exe', save_games=True, time_limit=2000)
-print()
+# print('tiltak against tei')
+# tei_vs_tei(100, 'tiltak.exe', 'topaz.exe', save_games=True, time_limit=2000)
+# print()
+#
+# print('topaz against tei')
+# tei_vs_tei(100, 'topaz.exe', 'takson.exe', save_games=True, time_limit=2000)
+# print()
+# tei_vs_tei(100, 'topaz.exe', 'syntaks.exe', save_games=True, time_limit=2000)
+# print()
+# print('takson against tei')
+# tei_vs_tei(100, 'takson.exe', 'syntaks.exe', save_games=True, time_limit=2000)
+# print()
+#
+# print('takzero vs tei')
+# tei_vs_tei(100, 'takzero.exe', 'tiltak.exe', save_games=True, time_limit=2000)
+# print()
+# tei_vs_tei(100, 'takzero.exe', 'topaz.exe', save_games=True, time_limit=2000)
+# print()
+# tei_vs_tei(100, 'takzero.exe', 'takson.exe', save_games=True, time_limit=2000)
+# print()
+# tei_vs_tei(100, 'takzero.exe', 'syntaks.exe', save_games=True, time_limit=2000)
+# print()
+#
+#
+# tei_vs_tei(100, 'tiltak.exe', 'takson.exe', save_games=True, time_limit=2000)
+# print()
+#
+# tei_vs_tei(100, 'takzero.exe', 'taktician.exe', save_games=True, time_limit=2000)
+# print()
+# tei_vs_tei(100, 'taktician.exe', 'topaz.exe', save_games=True, time_limit=2000)
+# print()
+# tei_vs_tei(100, 'taktician.exe', 'takson.exe', save_games=True, time_limit=2000)
+# print()
+# tei_vs_tei(100, 'taktician.exe', 'syntaks.exe', save_games=True, time_limit=2000)
+# print()
+#
+#
+# tei_vs_tei(100, 'tiltak.exe', 'syntaks.exe', save_games=True, time_limit=2000)
+# print()
 
-print('topaz against tei')
-tei_vs_tei(100, 'topaz.exe', 'takson.exe', save_games=True, time_limit=2000)
-print()
-tei_vs_tei(100, 'topaz.exe', 'syntaks.exe', save_games=True, time_limit=2000)
-print()
-print('takson against tei')
-tei_vs_tei(100, 'takson.exe', 'syntaks.exe', save_games=True, time_limit=2000)
-print()
-
-print('takzero vs tei')
-tei_vs_tei(100, 'takzero.exe', 'tiltak.exe', save_games=True, time_limit=2000)
-print()
-tei_vs_tei(100, 'takzero.exe', 'topaz.exe', save_games=True, time_limit=2000)
-print()
-tei_vs_tei(100, 'takzero.exe', 'takson.exe', save_games=True, time_limit=2000)
-print()
-tei_vs_tei(100, 'takzero.exe', 'syntaks.exe', save_games=True, time_limit=2000)
-print()
 
 
-tei_vs_tei(100, 'tiltak.exe', 'takson.exe', save_games=True, time_limit=2000)
-print()
-
-tei_vs_tei(100, 'takzero.exe', 'taktician.exe', save_games=True, time_limit=2000)
-print()
-tei_vs_tei(100, 'taktician.exe', 'topaz.exe', save_games=True, time_limit=2000)
-print()
-tei_vs_tei(100, 'taktician.exe', 'takson.exe', save_games=True, time_limit=2000)
-print()
-tei_vs_tei(100, 'taktician.exe', 'syntaks.exe', save_games=True, time_limit=2000)
-print()
-
-
-tei_vs_tei(100, 'tiltak.exe', 'syntaks.exe', save_games=True, time_limit=2000)
-print()
+roadbuilder_vs_tei(100, 'model_checkpoints/version_14_15.pt', 'takzero.exe', save_games=True, time_limit=500)
 
 
 
@@ -261,6 +265,7 @@ print()
 # +531 elo
 # interval [438, 709]
 #
+# version_13_60 vs takzero
 # ins: 19, losses: 165, draws: 16, expected_value: 0.135
 # white wins: 8, white losses: 84, white draws: 8, expected_value: 0.12
 # black wins: 11, black losses: 81, black draws: 8, expected_value: 0.15
@@ -297,3 +302,12 @@ print()
 # black: wins: 0, draws: 0, losses: 50, expected_value: -1.0
 # -920 elo
 # interval [+727, inf)
+#
+# tiltak vs topaz
+# overview: wins: 0, draws: 0, losses: 100, expected_value: -1.0
+# white: wins: 0, draws: 0, losses: 50, expected_value: -1.0
+# black: wins: 0, draws: 0, losses: 50, expected_value: -1.0
+
+
+
+

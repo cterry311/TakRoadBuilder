@@ -213,5 +213,10 @@ def run_self_games(model1, model2, num_positions, c_puct, urgency, num_games, ko
 # total games: 100
 
 
-print('self games, model 13_84 vs 13_70')
-run_self_games('model_checkpoints/version_13_70.pt', 'model_checkpoints/version_13_60.pt', 5_000, 1.5, -0.2, 100, 2, save_games=True)
+# print('self games, model 13_84 vs 13_70')
+# run_self_games('model_checkpoints/version_13_70.pt', 'model_checkpoints/version_13_60.pt', 5_000, 1.5, -0.2, 100, 2, save_games=True)
+
+
+
+print('self games, model 14_15 vs 13_60')
+run_self_games('model_checkpoints/version_14_15.pt', 'model_checkpoints/version_13_60.pt',  5_000, 1.5, -0.2, 100, 2)
