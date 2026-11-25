@@ -71,7 +71,7 @@ import numpy as np
 from scipy.special import softmax
 
 
-MODEL_PATH = r"C:\Users\cterry\PersonalCode\Capstone\tak\model_releases\release_1_1.onnx"
+MODEL_PATH = r"C:\model_releases\release_1_1.onnx" # update model path to match path
 
 
 

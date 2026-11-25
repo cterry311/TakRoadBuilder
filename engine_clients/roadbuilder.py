@@ -1,4 +1,6 @@
-
+"""
+the clients for interacting with the model
+"""
 import numpy as np
 import torch
 import tak_engine
@@ -76,7 +78,13 @@ print(time.perf_counter() - start_time)
 
 
 class RoadBuilder:
-    def __init__(self, model_path, batch_size=256):
+    """the base client for interfacing with the model, does not persist state between moves"""
+    def __init__(self, model_path: str, batch_size: int=256):
+        """
+        create a new RoadBuilder client
+        :param model_path: the path to the model checkpoint
+        :param batch_size: the size of batch to pass to the model
+        """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         info = torch.load(model_path, map_location=self.device)
@@ -93,7 +101,26 @@ class RoadBuilder:
             self.model(torch.zeros(self.BATCH, 25, 6, 6, device=self.device))
 
     @torch.no_grad()
-    def best_move(self, tps: str, max_sims=None, time_limit=None, c_puct=1.5, urgency=-0.2, alpha=0.1, eps=0.25, seed=None, komi=2):
+    def best_move(self, tps: str, max_sims: int=None, time_limit: int=None, c_puct: float=1.5, urgency: float=-0.2, alpha: float=0.1, eps: float=0.25, seed: int=None, komi: int=2) -> tuple[str, list[tuple[int, int, float | int]], int, float]:
+        """
+        get a move from the engine, with the given limits and parameters
+
+        :param tps: the position to get the move from
+        :param max_sims: the maximum number of positions the search tree is allowed to evaluate
+        :param time_limit: the time in milliseconds to allow the search to run for
+        :param c_puct: how much to prioritize the initial policy
+        :param urgency: how much to prioritize unexplored nodes
+        :param alpha: how spread out the noise is, small values boost random moves
+        :param eps: how much of the root prior is composed of noise, between 0 and 1, 0 is no noise
+        :param seed: the seed to use for the random noise
+        :param komi: the komi to use for the position
+        :return:
+            the move selected in ptn format,
+            root stats, list of tuples, for each move from the root, (raw_move, visits, value),
+            the number of sims the tree preformed,
+            the q value at the root, a value between 1 and -1.
+
+        """
         if seed is None:
             seed = int(time.time() * 1000)
         if time_limit is not None:
@@ -133,19 +160,34 @@ class RoadBuilder:
 
 
 class RoadBuilderGame:
+    """a client for interacting with the model, persisits state between moves, has an internal search tree and game that is reused. intended for playing sequential moves"""
     def __init__(
             self,
-            model_path,
-            batch_size=256,
-            c_puct=1.5,
-            urgency=-0.2,
-            alpha=0.1,
-            eps=0.25,
-            eval_cache=True,
-            cache_max_age=2,
-            komi=2,
-            capacity=1_000_000
+            model_path: str,
+            batch_size: int=256,
+            c_puct: float=1.5,
+            urgency: float=-0.2,
+            alpha: float=0.1,
+            eps: float=0.25,
+            eval_cache: bool=True,
+            cache_max_age: int=2,
+            komi: int=2,
+            capacity: int=1_000_000
         ):
+        """
+        create an instance of the client
+
+        :param model_path: the path to the model checkpoint
+        :param batch_size: the size of the batch to send to the model
+        :param c_puct: how much to prioritize the initial policy
+        :param urgency: how much to prioritize unexplored nodes
+        :param alpha: how spiky the noise is, small values boost random moves
+        :param eps: how much of the root prior is composed of noise, between 0 and 1, 0 is no noise
+        :param eval_cache: whether to use the eval cache
+        :param cache_max_age: how many rebased cached entries survive
+        :param komi: the komi of the game
+        :param capacity: how much space is allocated for the search tree
+        """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         info = torch.load(model_path, map_location=self.device)
@@ -174,7 +216,18 @@ class RoadBuilderGame:
 
         self.ply = 0
 
-    def make_move(self, move):
+    def make_move(self, move: str):
+        """
+        advance the client forward with the move, the tree is rebased to the new position
+
+        :param move: the ptn move
+        :return:
+            the move selected in ptn format,
+            root stats, list of tuples, for each move from the root, (raw_move, visits, value),
+            the number of sims the tree preformed,
+            the q value at the root, a value between 1 and -1.
+
+        """
         self.game.make_move(move)
         self.ply += 1
         try:
@@ -183,7 +236,17 @@ class RoadBuilderGame:
             self.tree = tak_engine.Search(self.game.to_tps(), urgency=self.urgency, c_puct=self.c_puct, komi=self.komi, eval_cache=True, cache_max_age=2)
 
     @torch.no_grad()
-    def best_move(self, max_sims: int | None =None, time_limit: int | None =None, node_count: int | None =None, depth_limit: int | None=None, temp=0):
+    def best_move(self, max_sims: int | None =None, time_limit: int | None =None, node_count: int | None =None, depth_limit: int | None=None, temp: float=0) -> tuple[str, list[tuple[int, int, float | int]], int, float]:
+        """
+        Get the best move from the tree, the tree is rebased to the new position
+
+        :param max_sims: the maximum number of simulations the tree can run
+        :param time_limit: the time in milliseconds the tree can run for
+        :param node_count: the maximum number of nodes the tree can contain
+        :param depth_limit: the maximum average depth the tree is allowed
+        :param temp: the tempature for which to sample the move, 0 or below is argmax selection
+        :return:
+        """
         if self.ply < 5:
             game_hash = self.game.__hash__()
             cursor.execute("""
@@ -249,6 +312,14 @@ class RoadBuilderGame:
 
     @torch.no_grad()
     def bake_tree(self, max_sims=None, time_limit=None, node_count=None):
+        """
+        run the engine to increase the size of the search tree, does not get a move
+
+        :param max_sims: the maximum number of simulations the tree can run
+        :param time_limit: the time in milliseconds the tree can run for
+        :param node_count: the maximum number of nodes the tree can contain
+        :return:
+        """
         if max_sims is None and time_limit is None and node_count is None:
             raise ValueError("Either max_sims or time_limit or node_count must be specified")
         if time_limit is not None:
@@ -281,7 +352,13 @@ class RoadBuilderGame:
 
 
 def run_tei(get_lines=None, send=None):
+    """
+    run a tei interface for the model, pushes lines using the function provided, gets lines using the fuction provided
 
+    :param get_lines: a function for getting lines for input
+    :param send: a function for sending lines from the tei
+    :return:
+    """
     if get_lines is None:
         def get_lines():
             for line in sys.stdin:
@@ -524,6 +601,9 @@ def run_tei(get_lines=None, send=None):
 
 
 if __name__ == "__main__":
+    """
+    run the tei interface
+    """
 
     # HOST, PORT = "localhost", 7731
     # sock = socket.create_connection((HOST, PORT))

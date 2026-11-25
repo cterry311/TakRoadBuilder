@@ -1,7 +1,20 @@
+"""
+Engine client for Taktician
+"""
+
 import subprocess
 
 class TakticianTEI:
-    def __init__(self, size=6, halfkomi=0, cmd=("taktician", "tei")):
+    """
+    A client for interacting with the Taktician engine.
+    """
+    def __init__(self, size: int=6, halfkomi: int=0, cmd=("taktician", "tei")):
+        """
+        Create a new Taktician client.
+        :param size: the size of the board
+        :param halfkomi: the komi of the game, half of the actual komi
+        :param cmd: the path to the taktician executable and the initial command to send
+        """
         self.size = size
         self.proc = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -13,11 +26,21 @@ class TakticianTEI:
         self._wait_for("readyok")
         self.new_game()
 
-    def _send(self, line):
+    def _send(self, line: str):
+        """
+        send a line to the taktition tei
+        :param line: the line to send
+        :return:
+        """
         self.proc.stdin.write(line + "\n")
         self.proc.stdin.flush()
 
-    def _wait_for(self, prefix):
+    def _wait_for(self, prefix: str) -> str:
+        """
+        waits to recive a line starting with the given prefix
+        :param prefix: the start of the line to wait for
+        :return: the matching line
+        """
         while True:
             line = self.proc.stdout.readline()
             if not line:
@@ -27,12 +50,23 @@ class TakticianTEI:
                 return line
 
     def new_game(self):
+        """
+        create a new game for taktition to play
+        :return:
+        """
         self._send(f"teinewgame {self.size}")
         self._send("isready")
         self._wait_for("readyok")
 
-    def best_move(self, position=None, moves=None, movetime_ms=1000):
-        """moves: list of PTN strings played so far, e.g. ['a1', 'a6', 'd3']"""
+    def best_move(self, position: str=None, moves: list[str]=None, movetime_ms: int=1000) -> str:
+        """
+        gets taktitions best move with the given position, with the provided thinktime
+
+        :param position: the position as a tps string
+        :param moves: a list of moves as ptn strings
+        :param movetime_ms: the time in milliseconds provided to taktition
+        :return: the ptn move
+        """
         if position is None:
             position = "startpos"
         else:
@@ -46,12 +80,19 @@ class TakticianTEI:
         return self._wait_for("bestmove").split()[1]
 
     def close(self):
+        """
+        close the connection with taktition
+        :return:
+        """
         self._send("quit")
         self.proc.wait(timeout=5)
 
 
 
 if __name__ == "__main__":
+    """
+    test the Taktition engine
+    """
     bot = TakticianTEI()
     bot.new_game()
     moves = []

@@ -1,9 +1,22 @@
+"""
+A client for interacting with the Tiltak engine.
+"""
 import subprocess
 import os
 import sys
 
 class Tiltak:
-    def __init__(self, size=6, half_komi=0, exe=None):
+    """
+    A client for interacting with the Tiltak engine.
+    """
+    def __init__(self, size: int=6, half_komi: int=0, exe: str=None):
+        """
+        Create a new Tiltak client.
+
+        :param size: the size of the board
+        :param half_komi: the half komi of the game
+        :param exe: the path to the tiltak executable, is optional
+        """
         here = os.path.dirname(os.path.abspath(__file__))
         exe = exe or os.path.join(here, "exe", "tiltak.exe")
         self.p = subprocess.Popen([exe], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
@@ -12,22 +25,42 @@ class Tiltak:
         self.send(f"teinewgame {size}")
         self.send("isready"); self.wait_for("readyok")
 
-    def send(self, line):
+    def send(self, line: str):
+        """
+        send a line to the tiltak engine
+        :param line: the line to send
+        :return:
+        """
         self.p.stdin.write(line + "\n"); self.p.stdin.flush()
 
     def read_line(self):
+        """
+        reads the next line from the engine
+        :return:
+        """
         line = self.p.stdout.readline()
         if not line:
             raise RuntimeError("engine exited")
         return line.strip()
 
     def wait_for(self, prefix):
+        """
+        waits for a line starting with the given prefix and returns it
+        :param prefix: the start of the line to wait for
+        :return: the matching line
+        """
         while True:
             line = self.read_line()
             if line.startswith(prefix):
                 return line
 
-    def send_position(self, position=None, moves=None):
+    def send_position(self, position: str=None, moves: list[str]=None):
+        """
+        send a position to the engine, prime it for getting the best move from that position
+        :param position: the position as a tps string
+        :param moves: a sequence of moves in ptn format to be applied from the position
+        :return:
+        """
         request = "position "
         if position is None:
             request += "startpos"
@@ -37,7 +70,15 @@ class Tiltak:
             request += f" moves {" ".join(moves)}"
         self.send(request)
 
-    def best_move(self, position=None, moves=None, movetime_ms: int=None, nodes: int=None):
+    def best_move(self, position: str=None, moves: list[str]=None, movetime_ms: int=None, nodes: int=None) -> str:
+        """
+        gets the best move from the engine for the given position
+        :param position: the position as a tps string
+        :param moves: the moves to be applied to the position
+        :param movetime_ms: the time in milliseconds to search for
+        :param nodes: the max number of nodes allowed to be searched
+        :return: the ptn move
+        """
         self.send_position(position, moves)
         if movetime_ms is not None:
             self.send(f"go movetime {movetime_ms}")
@@ -110,11 +151,18 @@ class Tiltak:
         return out
 
     def close(self):
+        """
+        close the tiltak connection and end the engine process
+        :return:
+        """
         self.send("quit"); self.p.wait()
 
 
 
 if __name__ == "__main__":
+    """
+    test the Tiltak engine
+    """
     bot = Tiltak(size=6, half_komi=0, exe=sys.argv[1] if len(sys.argv) > 1 else None)
 
     moves = []

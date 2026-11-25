@@ -1,3 +1,7 @@
+"""
+play games against beginnerBot, taktician, and tiltak.
+search tree is not used, instead moves are filtered by a brute force search
+"""
 from engine_clients.beginner_bot import BeginnerBotEngine
 from engine_clients.taktician_bot import TakticianTEI
 from engine_clients.tiltak_bot import Tiltak
@@ -14,7 +18,16 @@ model = TakNet(**info['params'])
 model.load_state_dict(info['weights'])
 
 
-def get_model_move(tak: tak_engine.Tak, model, depth):
+def get_model_move(tak: tak_engine.Tak, model: TakNet, depth: int):
+    """
+    gets a move from the model in ptn format.
+    filters to only the best moves within a given depth.
+
+    :param tak: the tak game to make the move from
+    :param model: the model to use for policy
+    :param depth: the depth limit in which to filter out losing moves, -1 for no filtering
+    :return:
+    """
     if depth == -1:
         filtered_moves = tak.legal_moves_raw()
         value = 0
@@ -66,7 +79,17 @@ def get_model_move(tak: tak_engine.Tak, model, depth):
 # with open('test2.ptn', 'w') as f:
 #     f.write(ptn_game)
 
-def save_moves_to_ptn(game, moves, player_white, player_black, save_path):
+def save_moves_to_ptn(game: tak_engine.Tak, moves: list[str], player_white: str, player_black: str, save_path: str):
+    """
+    saves a move sequence to a ptn file
+
+    :param game: the game that was played out
+    :param moves: the sequence of moves in ptn format
+    :param player_white: the player playing white
+    :param player_black: the player playing black
+    :param save_path: the path to save the ptn file to
+    :return:
+    """
     ptn_game = f'[size "6"]\n[player1 "{player_white}"]\n[player2 "{player_black}"]\n'
 
     for i, move in enumerate(moves):
@@ -80,7 +103,16 @@ def save_moves_to_ptn(game, moves, player_white, player_black, save_path):
         f.write(ptn_game)
 
 
-def run_beginner_bot_games(search_depth, beginner_bot_time, num_games, save_games=False):
+def run_beginner_bot_games(search_depth: int, beginner_bot_time: int, num_games: int, save_games: bool=False):
+    """
+    run games against beginnerBot with base model, no search tree, only move filtering. logs results to the console.
+
+    :param search_depth: the depth at which to filter for the best moves for the model
+    :param beginner_bot_time: the time alloted for beginnerbot in milliseconds
+    :param num_games: the number of games to play
+    :param save_games: if to save the games
+    :return:
+    """
     bot = BeginnerBotEngine()
     wins = 0
     draws = 0
@@ -131,7 +163,16 @@ def run_beginner_bot_games(search_depth, beginner_bot_time, num_games, save_game
     return wins, losses, draws
 
 
-def run_taktician_bot_games(search_depth, taktician_bot_time, num_games, save_games=False):
+def run_taktician_bot_games(search_depth: int, taktician_bot_time: int, num_games: int, save_games: bool=False):
+    """
+    run games against taktician with base model, no search tree, only move filtering. logs results to the console.
+
+    :param search_depth: the depth at which to filter moves for best moves
+    :param taktician_bot_time: the time in milliseconds allotted for taktician
+    :param num_games: the number of games to play
+    :param save_games: if to save the games
+    :return:
+    """
     bot = TakticianTEI()
     wins = 0
     draws = 0
@@ -182,7 +223,16 @@ def run_taktician_bot_games(search_depth, taktician_bot_time, num_games, save_ga
     return wins, losses, draws
 
 
-def run_tiltak_bot_games(search_depth, taktician_bot_time, num_games, save_games=False):
+def run_tiltak_bot_games(search_depth: int, taktician_bot_time: int, num_games: int, save_games: bool=False):
+    """
+    run games against tiltak with base model, no search tree, only move filtering. logs results to the console.
+
+    :param search_depth: the depth at which to filter moves for best moves
+    :param taktician_bot_time: the time in milliseconds allotted for tiltak
+    :param num_games: the number of games to play
+    :param save_games: if to save the games
+    :return:
+    """
     bot = Tiltak()
     wins = 0
     draws = 0

@@ -20,11 +20,14 @@ import sys
 
 
 class TakEngineError(RuntimeError):
+    """Raised when the engine returns an error."""
     pass
 
 
 class BeginnerBotEngine:
+    """A client for interacting with the BeginnerBot binary"""
     def __init__(self):
+        """Start the engine process, set up the client"""
         here = os.path.dirname(os.path.abspath(__file__))
         exe = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, "exe", "beginnerBot.exe")
         self._proc = subprocess.Popen(
@@ -70,18 +73,22 @@ class BeginnerBotEngine:
         return self.request(**req)
 
     def close(self):
+        """Close the engine process"""
         if self._proc.poll() is None:
             self._proc.stdin.close()
             self._proc.wait(timeout=5)
 
     def __enter__(self):
+        """get self"""
         return self
 
     def __exit__(self, *exc):
+        """close the engine"""
         self.close()
 
 
 if __name__ == "__main__":
+    """test the engine, confirm functionality"""
     import os
     import sys
 

@@ -2,7 +2,7 @@ import torch
 from model.tak_net import TakNet
 
 
-MODEL_PATH = 'model_checkpoints/version_13_60.pt'
+MODEL_PATH = 'model_checkpoints/version_14_62.pt'
 
 
 info = torch.load(MODEL_PATH)
@@ -15,7 +15,7 @@ dummy = torch.randn(256, 25, 6, 6)
 torch.onnx.export(
     model,
     dummy,
-    "model_releases/release_1_1.onnx",
+    "model_releases/release_2_2.onnx",
     input_names=["input"],
     output_names=["policy", "value"],   # same order as the tuple your forward returns
     dynamic_axes={

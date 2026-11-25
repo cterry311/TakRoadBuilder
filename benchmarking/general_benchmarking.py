@@ -1,9 +1,23 @@
+"""
+play games between the model with search tree and a tei engine, or between two tei engines
+"""
 from engine_clients.roadbuilder import RoadBuilder, RoadBuilderGame
 from engine_clients.teiInterface import TeiEngine
 import tak_engine
 
 
-def save_moves_to_ptn(game, moves, player_white, player_black, save_path):
+
+def save_moves_to_ptn(game: tak_engine.Tak, moves: list[str], player_white: str, player_black: str, save_path: str):
+    """
+    saves a sequence of moves as a valid ptn file
+
+    :param game: a tak_engine.Tak instance, the game of the file to save
+    :param moves: a list of strings, each element in the list is a move taken
+    :param player_white: the white player
+    :param player_black: the black player
+    :param save_path: the path to save the ptn file to
+    :return:
+    """
     ptn_game = f'[size "6"]\n[player1 "{player_white}"]\n[player2 "{player_black}"]\n[komi "2"]\n'
 
     for i, move in enumerate(moves):
@@ -17,7 +31,20 @@ def save_moves_to_ptn(game, moves, player_white, player_black, save_path):
         f.write(ptn_game)
 
 
-def roadbuilder_vs_tei(num_games, model_path, exe, time_limit: int=None, node_limit: int=None, depth_limit: int=None, save_games=True):
+def roadbuilder_vs_tei(num_games: int, model_path: str, exe: str, time_limit: int=None, node_limit: int=None, depth_limit: int=None, save_games: bool=True):
+    """
+    plays the designated number of games between the model at the given path and the provided engine tei.
+    will log results to the console
+
+    :param num_games: the number of games to play
+    :param model_path: the path to the model to use
+    :param exe: the exe to use found in engine_clients/exe
+    :param time_limit: the time limit in milliseconds per move
+    :param node_limit: sim limit per move
+    :param depth_limit: avg depth limit per move
+    :param save_games: if the games are saved or not
+    :return:
+    """
     tei_engine = TeiEngine(exe=exe, half_komi=4)
 
     wins = 0
@@ -101,7 +128,19 @@ def roadbuilder_vs_tei(num_games, model_path, exe, time_limit: int=None, node_li
 
 
 
-def tei_vs_tei(num_games, exe1, exe2, time_limit: int=None, node_limit: int=None, depth_limit: int=None, save_games=True):
+def tei_vs_tei(num_games: int, exe1: str, exe2: str, time_limit: int=None, node_limit: int=None, depth_limit: int=None, save_games: bool=True):
+    """
+    plays games between two tei engines, exe1 and exe2, will log results to the console
+
+    :param num_games: the number of games to play
+    :param exe1: the first exe to use, found in engine_clients/exe
+    :param exe2: the second exe to use, found in engine_clients/exe
+    :param time_limit: the time limit in milliseconds per move
+    :param node_limit: the sim limit per move
+    :param depth_limit: the avg depth limit per move
+    :param save_games: if to save the games or not
+    :return:
+    """
     tei_engine_1 = TeiEngine(exe=exe1, half_komi=4)
     tei_engine_2 = TeiEngine(exe=exe2, half_komi=4)
 
@@ -245,7 +284,7 @@ def tei_vs_tei(num_games, exe1, exe2, time_limit: int=None, node_limit: int=None
 
 
 
-roadbuilder_vs_tei(100, 'model_checkpoints/version_14_36.pt', 'takzero.exe', save_games=True, time_limit=500)
+roadbuilder_vs_tei(100, 'model_checkpoints/version_14_62.pt', 'takzero.exe', save_games=True, time_limit=500)
 
 
 

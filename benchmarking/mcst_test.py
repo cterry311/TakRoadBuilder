@@ -1,3 +1,7 @@
+"""
+play games against BeginnerBot, Taktician, and Tiltak.
+model uses search tree now
+"""
 from engine_clients.beginner_bot import BeginnerBotEngine
 from engine_clients.taktician_bot import TakticianTEI
 from engine_clients.tiltak_bot import Tiltak
@@ -13,7 +17,16 @@ from engine_clients.roadbuilder import RoadBuilder
 model_client = RoadBuilder('model_checkpoints/version_13_60.pt')
 
 
-def get_model_move(game: tak_engine.Tak, search_time, c_puct, urgency):
+def get_model_move(game: tak_engine.Tak, search_time: int, c_puct: float, urgency: float) -> str:
+    """
+    get a move from the model, given a game and search time
+
+    :param game: the game to take the move from, the current position is used as the state
+    :param search_time: the time in milliseconds to search for a move
+    :param c_puct: how heavily the initial policy is weighted
+    :param urgency: how much to prioritize searching unexplored nodes
+    :return: the move to make in ptn format
+    """
     tps = game.to_tps()
     best_move = model_client.best_move(tps, time_limit=search_time, c_puct=c_puct, urgency=urgency, komi=2)[0]
     return best_move
@@ -21,7 +34,17 @@ def get_model_move(game: tak_engine.Tak, search_time, c_puct, urgency):
 
 
 
-def save_moves_to_ptn(game, moves, player_white, player_black, save_path):
+def save_moves_to_ptn(game: tak_engine.Tak, moves: list[str], player_white: str, player_black: str, save_path: str):
+    """
+    saves a move sequence to a ptn file
+
+    :param game: the game to save the moves from
+    :param moves: the move sequence as ptn moves
+    :param player_white: the white player
+    :param player_black: the black player
+    :param save_path: the path to save the ptn file to
+    :return:
+    """
     ptn_game = f'[size "6"]\n[player1 "{player_white}"]\n[player2 "{player_black}"]\n[komi "2"]\n'
 
     for i, move in enumerate(moves):
@@ -35,7 +58,18 @@ def save_moves_to_ptn(game, moves, player_white, player_black, save_path):
         f.write(ptn_game)
 
 
-def run_beginner_bot_games(beginner_bot_time, model_time, c_puct, urgency, num_games, save_games=False):
+def run_beginner_bot_games(beginner_bot_time: int, model_time: int, c_puct: float, urgency: float, num_games: int, save_games: bool=False):
+    """
+    run games against beginnerBot using the search tree, will log results to the console
+
+    :param beginner_bot_time: the time in milliseconds allotted for beginnerbot
+    :param model_time: the time in milliseconds allotted for the model to search
+    :param c_puct: how heavily the initial policy is weighted
+    :param urgency: how much to prioritize searching unexplored nodes
+    :param num_games: how many games to play
+    :param save_games: if to save the games
+    :return:
+    """
     bot = BeginnerBotEngine()
     wins = 0
     draws = 0
@@ -86,7 +120,18 @@ def run_beginner_bot_games(beginner_bot_time, model_time, c_puct, urgency, num_g
     return wins, losses, draws
 
 
-def run_taktician_bot_games(taktician_bot_time, model_time, c_puct, urgency, num_games, save_games=False):
+def run_taktician_bot_games(taktician_bot_time: int, model_time: int, c_puct: float, urgency: float, num_games: int, save_games: bool=False):
+    """
+    play games against taktician, will log results to the console
+
+    :param taktician_bot_time: the time in milliseconds allotted for taktician
+    :param model_time: the time in milliseconds allotted for the model to search
+    :param c_puct: how heavily the initial policy is weighted
+    :param urgency: how much to prioritize searching unexplored nodes
+    :param num_games: the number of games to play
+    :param save_games: if to save the games
+    :return:
+    """
     bot = TakticianTEI()
     wins = 0
     draws = 0
@@ -137,7 +182,18 @@ def run_taktician_bot_games(taktician_bot_time, model_time, c_puct, urgency, num
     return wins, losses, draws
 
 
-def run_tiltak_bot_games(taktician_bot_time, model_time, c_puct, urgency, num_games, save_games=False):
+def run_tiltak_bot_games(taktician_bot_time: int, model_time: int, c_puct: float, urgency: float, num_games: int, save_games: bool=False):
+    """
+    play games against tiltak, will log results to the console
+
+    :param taktician_bot_time: the time in milliseconds allotted for taktician
+    :param model_time: the time in milliseconds allotted for the model to search
+    :param c_puct: how heavily the initial policy is weighted
+    :param urgency: how much to prioritize searching unexplored nodes
+    :param num_games: how many games to play
+    :param save_games: if to save the games
+    :return:
+    """
     bot = Tiltak(half_komi=4)
     wins = 0
     draws = 0

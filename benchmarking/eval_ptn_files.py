@@ -1,8 +1,11 @@
+"""
+search the ptn_files directory, identify the files starting with a given sequence, determine the win loss draw count for those games
+"""
 import tak_engine
 import sys
 import os
 
-FILE_START = 'version_14_36_vs_takzero_'
+FILE_START = 'version_14_36_vs_takzero_' # the leading part of a ptn game file
 
 
 files = os.listdir('ptn_files')
@@ -19,6 +22,8 @@ black_wins = 0
 black_draws = 0
 black_losses = 0
 
+# analyzes all files starting with the given start, keeps track of wins and losses
+# this script is for getting stats partway through a benchmark, or from getting a result from a benchmark after the fact
 for file in files:
     if file.startswith(FILE_START):
         i = int(file.split('.')[0][len(FILE_START):])

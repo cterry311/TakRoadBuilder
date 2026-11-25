@@ -1,3 +1,6 @@
+"""
+play games against two different model checkpoints
+"""
 import tak_engine
 
 
@@ -6,7 +9,17 @@ from engine_clients.roadbuilder import RoadBuilder
 
 
 
-def get_model_move(client,game: tak_engine.Tak, num_positions, c_puct, urgency):
+def get_model_move(client: RoadBuilder ,game: tak_engine.Tak, num_positions: int, c_puct: float, urgency: float) -> str:
+    """
+    get the best move from the model client given the num positions to search
+
+    :param client: the model client
+    :param game: the game to make the move from
+    :param num_positions: the number of positions allowed to search
+    :param c_puct: how heavily to prioritize the initial policy
+    :param urgency: how much to prioritize searching unexplored nodes
+    :return: the move as a ptn string
+    """
     tps = game.to_tps()
     best_move = client.best_move(tps, max_sims=num_positions, c_puct=c_puct, urgency=urgency, komi=2)[0]
     return best_move
@@ -14,7 +27,17 @@ def get_model_move(client,game: tak_engine.Tak, num_positions, c_puct, urgency):
 
 
 
-def save_moves_to_ptn(game, moves, player_white, player_black, save_path):
+def save_moves_to_ptn(game: tak_engine.Tak, moves: list[str], player_white: str, player_black: str, save_path: str):
+    """
+    save a move sequence to a ptn file
+
+    :param game: the game to save the moves from
+    :param moves: the sequence of moves to save
+    :param player_white: the first player to move
+    :param player_black: the second player to move
+    :param save_path: the path to save the ptn file to
+    :return:
+    """
     ptn_game = f'[size "6"]\n[player1 "{player_white}"]\n[player2 "{player_black}"]\n[komi "2"]\n'
 
     for i, move in enumerate(moves):
@@ -28,7 +51,20 @@ def save_moves_to_ptn(game, moves, player_white, player_black, save_path):
         f.write(ptn_game)
 
 
-def run_self_games(model1, model2, num_positions, c_puct, urgency, num_games, komi, save_games=False):
+def run_self_games(model1: str, model2: str, num_positions: int, c_puct: float, urgency: float, num_games: int, komi: int, save_games: bool=False):
+    """
+    run games between two model checkpoints, log the results to the console
+
+    :param model1: the first model path
+    :param model2: the second model path
+    :param num_positions: the number of positions to check per move
+    :param c_puct: how much to prioritize the initial policy,
+    :param urgency: how much to prioritize unexplored nodes,
+    :param num_games: the number of games to play
+    :param komi: the komi to use in the games
+    :param save_games: if to save the games
+    :return:
+    """
     model_client1 = RoadBuilder(model1)
     model_client2 = RoadBuilder(model2)
     name_1 = model1.split('/')[-1].split('.')[0]
@@ -232,3 +268,21 @@ def run_self_games(model1, model2, num_positions, c_puct, urgency, num_games, ko
 # wins: 31, losses: 59, draws: 10
 # total games: 100
 # aprox -139 elo
+
+
+# print('self games, model 13_60 vs 14_36')
+# run_self_games('model_checkpoints/version_13_60.pt', 'model_checkpoints/version_14_36.pt',  5_000, 1.5, -0.2, 100, 2, save_games=True)
+# self games, model 13_60 vs 14_36
+# wins: 15, losses: 77, draws: 8
+# total games: 100
+# aprox -252 elo
+
+
+# print('self games, model 14_62 vs 14_36')
+# run_self_games('model_checkpoints/version_14_62.pt', 'model_checkpoints/version_14_36.pt',  5_000, 1.5, -0.2, 100, 2, save_games=True)
+# self games, model 14_62 vs 14_36
+# wins: 74, losses: 20, draws: 6
+# total games: 100
+# aprox +210 elo
+
+

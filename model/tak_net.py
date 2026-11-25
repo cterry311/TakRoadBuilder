@@ -1,3 +1,6 @@
+"""
+defining model structure
+"""
 from typing import List
 
 # CNN, has 6x6 input
@@ -31,21 +34,46 @@ VALUE_BLOCKS = 1
 
 
 class ResBlock(nn.Module):
+    """
+    a conv block with a connection between the input and output
+    """
     def __init__(self, ch):
+        """
+        create the block
+        :param ch: the number of channels in the block
+        """
         super().__init__()
         self.conv1 = nn.Conv2d(ch, ch, 3, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(ch)
         self.conv2 = nn.Conv2d(ch, ch, 3, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(ch)
 
-    def forward(self, x):
+    def forward(self, x) -> torch.Tensor:
+        """
+        do a forward pass through the block
+        :param x: the input
+        :return: the output
+        """
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
         return F.relu(out + x)
 
 
 class TakNet(nn.Module):
-    def __init__(self, in_ch=IN_CHANNELS, tr_ch=TRUNK_CHANNELS, tr_bl=TRUNK_BLOCKS, pol_ch=POLICY_OUTPUT_CHANNELS, pol_bl=POLICY_BLOCKS, val_size=VALUE_NET_SIZE, val_bl=VALUE_BLOCKS,):
+    """
+    an alphazero-style network
+    """
+    def __init__(self, in_ch: int=IN_CHANNELS, tr_ch: int=TRUNK_CHANNELS, tr_bl: int=TRUNK_BLOCKS, pol_ch: int=POLICY_OUTPUT_CHANNELS, pol_bl: int=POLICY_BLOCKS, val_size: int=VALUE_NET_SIZE, val_bl: int=VALUE_BLOCKS,):
+        """
+        create the network
+        :param in_ch: the number of input channels, constrained by model input
+        :param tr_ch: the number of channels to be used in the trunk
+        :param tr_bl: the number of resblocks in the trunk
+        :param pol_ch: the number of channels to be used in the policy head
+        :param pol_bl: the number of resblocks in the policy head
+        :param val_size: the width of the value head
+        :param val_bl: the number of layers in the value head
+        """
         super().__init__()
         trunk_ops: List[nn.Module] = [
             nn.Conv2d(in_ch, tr_ch, 3, padding=1, bias=False),
@@ -77,6 +105,11 @@ class TakNet(nn.Module):
         # value_ops.append(nn.Softmax(dim=1)) #value head is now logits instead of probabilities
         self.value = nn.Sequential(*value_ops)
 
-    def forward(self, x):
+    def forward(self, x) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        do a forward pass through the network
+        :param x: the input
+        :return: a tuple of (policy output, value output)
+        """
         x = self.trunk(x)
         return self.policy(x), self.value(x) # value output, 0 = loss, 1 = draw, 2 = win
