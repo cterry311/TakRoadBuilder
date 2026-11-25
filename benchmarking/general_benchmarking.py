@@ -245,7 +245,7 @@ def tei_vs_tei(num_games, exe1, exe2, time_limit: int=None, node_limit: int=None
 
 
 
-roadbuilder_vs_tei(100, 'model_checkpoints/version_14_15.pt', 'takzero.exe', save_games=True, time_limit=500)
+roadbuilder_vs_tei(100, 'model_checkpoints/version_14_36.pt', 'takzero.exe', save_games=True, time_limit=500)
 
 
 
@@ -310,4 +310,8 @@ roadbuilder_vs_tei(100, 'model_checkpoints/version_14_15.pt', 'takzero.exe', sav
 
 
 
-
+# 13_36 vs takzero
+# wins: 19, losses: 65, draws: 16
+# white wins: 4, white losses: 41, white draws: 5
+# black wins: 15, black losses: 24, black draws: 11
+# -173 elo

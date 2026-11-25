@@ -218,5 +218,17 @@ def run_self_games(model1, model2, num_positions, c_puct, urgency, num_games, ko
 
 
 
-print('self games, model 14_15 vs 13_60')
-run_self_games('model_checkpoints/version_14_15.pt', 'model_checkpoints/version_13_60.pt',  5_000, 1.5, -0.2, 100, 2)
+# print('self games, model 14_15 vs 13_60')
+# run_self_games('model_checkpoints/version_14_15.pt', 'model_checkpoints/version_13_60.pt',  5_000, 1.5, -0.2, 100, 2)
+# self games, model 14_15 vs 13_60
+# wins: 55, losses: 27, draws: 18
+# total games: 100
+# aprox + 100 elo
+
+
+# print('self games, model 14_15 vs 14_36')
+# run_self_games('model_checkpoints/version_14_15.pt', 'model_checkpoints/version_14_36.pt',  5_000, 1.5, -0.2, 100, 2, save_games=True)
+# self games, model 14_15 vs 14_36
+# wins: 31, losses: 59, draws: 10
+# total games: 100
+# aprox -139 elo

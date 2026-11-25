@@ -2,7 +2,7 @@ import tak_engine
 import sys
 import os
 
-FILE_START = 'topaz__vs__takson__'
+FILE_START = 'version_14_36_vs_takzero_'
 
 
 files = os.listdir('ptn_files')
