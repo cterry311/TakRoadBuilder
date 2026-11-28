@@ -4,6 +4,7 @@ mod tree;
 
 use pyo3::prelude::*;
 
+/// loads the python module
 #[pymodule]
 fn tak_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<python::PyTak>()?;

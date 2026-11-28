@@ -1,3 +1,6 @@
+"""
+setup training database from playtak game dump
+"""
 import sqlite3
 import re
 from random import choice
@@ -5,6 +8,12 @@ from random import choice
 from tak_engine import Tak as RustTak
 
 def parse_server_notation(notation : str, result):
+    """
+    parse server notation into ptn formatted moves
+    :param notation: the server notation
+    :param result: the ultimate game result
+    :return: a ptn file notating an entire game
+    """
     split_moves = notation.split(',')
     if len(split_moves) == 1:
         if split_moves[0] == '':
@@ -60,6 +69,11 @@ def parse_server_notation(notation : str, result):
 
 
 def get_moves_ordered(notation : str) -> list[str]:
+    """
+    get all moves in a ptn file in the order they were made
+    :param notation: the ptn file
+    :return: a list of ptn moves
+    """
     rows = notation.split('\n')
     moves = []
     for row in rows:
@@ -98,19 +112,29 @@ cursor.execute('''
 ''')
 print('tables dropped\n')
 
+
 print('creating tables...')
+"""
+filter out games to only include size 6, komi 0, pieces 30, and capstones 1
+"""
 cursor.execute('''
     CREATE TABLE filtered_1 AS
     SELECT id, player_white, player_black, notation, result, timertime, timerinc, rating_white, rating_black, unrated, tournament, rating_change_white, rating_change_black, extra_time_amount, extra_time_trigger FROM games
     WHERE size = 6 AND komi = 0 AND pieces = 30 AND capstones = 1
 ''') # 83,842
 
+"""
+filter out games to only include games where both players have more than 1500 elo, and where the result is not from resignation or timeout
+"""
 cursor.execute('''
     CREATE TABLE filtered_2 AS
     SELECT id, player_white, player_black, notation, result, timertime, timerinc, extra_time_amount, extra_time_trigger from filtered_1
     WHERE rating_white > 1500 AND rating_black > 1500 AND result != '0-1' AND result != '1-0' AND result != '0-0'
 ''') # 16279\
 
+"""
+filter out all games with less than 10 minuets or less than a 10 second time increment
+"""
 cursor.execute('''
     CREATE TABLE filtered_3 AS
     SELECT id, player_white, player_black, notation, result from filtered_2
@@ -147,6 +171,9 @@ cursor.execute('''
 print('tables created\n')
 
 print('formatting games...')
+"""
+format all games into ptn notation
+"""
 cursor.execute('''
     SELECT id, player_white, player_black, notation, result FROM filtered_3
 ''')
@@ -180,6 +207,9 @@ conn.commit()
 print('\ngames formatted\n')
 
 print('cleaning games...')
+"""
+clean games to only include those where that can be fully reconstructed and have a valid terminal state
+"""
 cursor.execute('''
     SELECT id, player_white, player_black, notation, game_length, result FROM games_formated
 ''')
@@ -215,6 +245,9 @@ for game in games_formated:
 print('\ngames cleaned\n')
 
 print('creating training positions...')
+"""
+split games into training positions
+"""
 cursor.execute('''
     SELECT id, player_white, player_black, notation, game_length, result
     FROM games_formated
@@ -261,6 +294,9 @@ conn.commit()
 print('\ntraining positions created\n')
 
 print('filtering training positions...')
+"""
+filter out training position where player made a move not within the best outcome class, proved within depth 1
+"""
 cursor.execute('''
     SELECT * FROM training_positions WHERE cleaned_move = 0
 ''')

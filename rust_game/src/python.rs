@@ -15,12 +15,17 @@ pub struct PyTak {
 
 #[pymethods]
 impl PyTak {
+
+    /// creation of the class
+    /// defaults komi argument to 0
     #[new]
     #[pyo3(signature = (komi = 0))]
     fn new(komi: u8) -> Self {
         PyTak { inner: Tak::new_with_komi(komi) }
     }
 
+    /// creation of a `PyTak` instance from a tps string
+    /// default argument for `komi` is 0
     #[staticmethod]
     #[pyo3(signature = (tps, komi = 0))]
     fn from_tps(tps: &str, komi: u8) -> PyResult<PyTak> {
@@ -29,10 +34,13 @@ impl PyTak {
             .map_err(PyValueError::new_err)
     }
 
+    /// returns a tps string representing the current state
     fn to_tps(&self) -> String {
         self.inner.to_tps()
     }
 
+    /// make a move transforming and advancing the current state
+    /// accepts a ptn string for the move
     fn make_move(&mut self, ptn: &str) -> PyResult<()> {
         if self.inner.result != GameResult::Ongoing {
             return Err(PyRuntimeError::new_err("game is over"));
@@ -42,6 +50,8 @@ impl PyTak {
         Ok(())
     }
 
+    /// make a move transforming and advancing the current state
+    /// accepts a raw integer to encoding the move to make
     fn make_move_raw(&mut self, mv: u16) -> PyResult<()> {
         if self.inner.result != GameResult::Ongoing {
             return Err(PyRuntimeError::new_err("game is over"));
@@ -51,28 +61,32 @@ impl PyTak {
         Ok(())
     }
 
+    /// undoes the last move made
     fn unmake_move(&mut self) {
         self.inner.unmake_move();
     }
 
+    /// gets a vector of all legal moves
     fn legal_moves(&self) -> Vec<String> {
         let mut buf = Vec::new();
         self.inner.get_all_legal_moves(&mut buf);
         buf.iter().map(|m| m.to_ptn()).collect()
     }
 
+    /// gets a vector of all legal moves as raw integers
     fn legal_moves_raw(&self) -> Vec<u16> {
         let mut buf = Vec::new();
         self.inner.get_all_legal_moves(&mut buf);
         buf.iter().map(|m| m.raw()).collect()
     }
 
-    /// gets filtered moves
+    /// gets filtered moves, filtered for the best class provable within a given depth
     fn filtered_moves(&mut self, depth: u8, do_pruning: bool) -> (Vec<String>, i8) {
         let (moves, score) = self.inner.get_filtered_moves(depth, do_pruning);
         (moves.iter().map(|m| m.to_ptn()).collect(), score)
     }
 
+    /// gets filtered moves, filtered for the best class provable within a given depth, as raw integers
     fn filtered_moves_raw(&mut self, depth: u8, do_pruning: bool) -> (Vec<u16>, i8) {
         let (moves, score) = self.inner.get_filtered_moves(depth, do_pruning);
         (moves.iter().map(|m| m.raw()).collect(), score)
@@ -101,6 +115,7 @@ impl PyTak {
         Ok(())
     }
 
+    /// returns a numpy array encoding game state
     fn to_tensor<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray3<f32>>> {
         let t = self.inner.to_tensor();                  // [f32; 900]
         let flat = PyArray1::from_slice(py, &t);   // copies into a numpy array
@@ -117,30 +132,36 @@ impl PyTak {
             .map_err(Into::into)
     }
 
+    /// create a copy of a `PyTak` instance
     fn clone(&self) -> PyTak {
         PyTak { inner: self.inner.clone() }
     }
 
+    /// convert a ptn string to a raw integer encoding
     #[staticmethod]
     fn ptn_to_raw(ptn: &str) -> PyResult<u16> {
         let raw = Move::from_ptn(ptn).raw();
         Ok(raw)
     }
 
+    /// convert a raw integer encoding to a ptn string
     #[staticmethod]
     fn raw_to_ptn(raw: u16) -> PyResult<String> {
         let ptn = Move::from_raw(raw).to_ptn();
         Ok(ptn)
     }
 
+    /// convert the game to a hash
     fn __hash__(&self) -> u64 {
         self.inner.to_hash().0
     }
 
+    /// get the rotation/reflection of the hash
     fn hash_transform(&self) -> usize {
         self.inner.to_hash().1
     }
 
+    /// get the side to move, either "white" or "black"
     fn side_to_move(&self) -> String {
         match self.inner.side_to_move() {
             Color::White => "white".to_string(),
@@ -149,6 +170,8 @@ impl PyTak {
     }
 }
 
+/// bulk convert a vector of tps strings to a vector of `PyTak` instances
+/// `komi` is 0 by default
 #[pyfunction]
 #[pyo3(signature = (tps_strs, komi = 0))]
 pub fn from_tps_bulk(tps_strs: Vec<String>, komi: u8) -> PyResult<Vec<PyTak>> {
@@ -164,6 +187,9 @@ pub fn from_tps_bulk(tps_strs: Vec<String>, komi: u8) -> PyResult<Vec<PyTak>> {
 
 const POLICY_LEN: usize = 251 * 6 * 6;
 const INPUT_LEN: usize = 25 * 36;
+
+/// Encode a batch of tps strings to a batch of input tensors as well as a mask of legal moves
+/// `komi` is 0 by default.
 #[pyfunction]
 #[pyo3(signature = (tps_strs, tensor, mask, komi = 0))]
 pub fn encode_training_batch(
@@ -217,11 +243,13 @@ pub fn encode_batch(
 }
 
 // in python.rs
+/// convert a raw move integer, into it's index in a policy output tensor
 #[pyfunction]
 pub fn raw_to_index(raw: u16) -> usize {
     Move::from_raw(raw).policy_index()
 }
 
+/// encode a batch of raw move integers into a batch of policy output indexes
 #[pyfunction]
 pub fn bulk_raw_to_index(raws: Vec<u16>) -> Vec<usize> {
     raws.into_iter()
@@ -230,6 +258,7 @@ pub fn bulk_raw_to_index(raws: Vec<u16>) -> Vec<usize> {
 }
 
 // python.rs
+/// convert a policy output index into a raw move integer
 #[pyfunction]
 pub fn index_to_raw(index: usize) -> PyResult<u16> {
     if index >= POLICY_LEN {
@@ -240,6 +269,8 @@ pub fn index_to_raw(index: usize) -> PyResult<u16> {
     Ok(Move::from_policy_index(index).raw())
 }
 
+
+/// convert a policy output index into a ptn string
 #[pyfunction]
 pub fn index_to_ptn(index: usize) -> PyResult<String> {
     if index >= POLICY_LEN {
@@ -251,7 +282,8 @@ pub fn index_to_ptn(index: usize) -> PyResult<String> {
 }
 
 
-
+/// transform a ptn move into a reflected and rotated move
+/// `sym` encodes the transformation
 #[pyfunction]
 pub fn transform_ptn(ptn: &str, sym: usize) -> String {
     let mv = Move::from_ptn(ptn);
@@ -259,6 +291,7 @@ pub fn transform_ptn(ptn: &str, sym: usize) -> String {
     t_move.to_ptn()
 }
 
+/// get the inverse for the provided transformation such that the application of both transformations leads to the original state
 #[pyfunction]
 pub fn inverse_transform(sym: usize) -> usize {
     inverse_sym(sym)
@@ -311,6 +344,8 @@ pub fn submit_batch(
 
 #[pymethods]
 impl Search {
+
+    /// create a new search tree
     #[new]
     #[pyo3(signature = (tps, urgency = -0.2, c_puct = 1.5, komi = 0, eval_cache = true, cache_max_age = 2, capacity = 50_000))]
     fn new(tps: &str, urgency: f32, c_puct: f32, komi: u8, eval_cache: bool, cache_max_age: u32, capacity: usize) -> PyResult<Self> {
@@ -322,6 +357,7 @@ impl Search {
         Ok(Search { tree })
     }
 
+    /// collect a set of leaves to be expanded, write their tensor embeddings to the buffer
     fn collect(&mut self, mut buf: PyReadwriteArray1<f32>, max_leaves: usize) -> PyResult<usize> {
         let slice = buf.as_slice_mut().map_err(|e| PyValueError::new_err(e.to_string()))?;
         if slice.len() < max_leaves * INPUT_LEN {
@@ -330,6 +366,7 @@ impl Search {
         Ok(self.tree.collect(slice, max_leaves))
     }
 
+    /// submit a set of policy and value outputs to the tree, fill out the backed up nodes in the tree with the given inputs
     fn submit(&mut self, policy: PyReadonlyArray1<f32>, values: PyReadonlyArray1<f32>) -> PyResult<()> {
         let p = policy.as_slice().map_err(|e| PyValueError::new_err(e.to_string()))?;
         let v = values.as_slice().map_err(|e| PyValueError::new_err(e.to_string()))?;
@@ -341,39 +378,61 @@ impl Search {
         Ok(())
     }
 
+    /// get the numbers of sims at the root
     fn sims(&self) -> u32 { self.tree.sims() }
+
+    /// check if the game in the tree is over
     fn is_over(&self) -> bool { self.tree.is_over() }
+
+    /// get the best move as a raw integer
     fn best_move_raw(&self) -> u16 { self.tree.best_move().raw() }
+
+    /// get the stats at the root (raw move, visits, q value)
     fn root_stats(&self) -> Vec<(u16, u32, f32)> { self.tree.root_stats() }
 
+    /// get the q value at the root
     fn root_q(&self) -> f32 { self.tree.root_q() }
 
+    /// add noise to the root node policy
+    /// # Arguments
+    /// * `alpha` - how spiky the noise is, lower values is more spiky
+    /// * `eps` - how much of the policy to replace with noise
+    /// * `seed` - the seed for the pseudorandom number generator
     fn add_noise(&mut self, alpha: f32, eps: f32, seed: u64) -> PyResult<()> {
         self.tree.add_root_noise(alpha, eps, seed);
         Ok(())
     }
 
+    /// rebase the tree to a new starting position
+    /// # Arguments
+    /// * `mv` - the raw integer encoding for the move, the move to take from the root to rebase the tree
     fn rebase_tree(&mut self, mv: u16) -> PyResult<()> {
         self.tree.rebase_tree(Move::from_raw(mv)).map_err(PyValueError::new_err)
     }
 
+    /// get the current tree as a string
     fn to_string(&self) -> String { self.tree.to_string() }
 
     /// (hits, misses, entries) for the eval cache, all 0 when it is off.
     fn cache_stats(&self) -> (u64, u64, usize) { self.tree.cache_stats() }
 
+    /// get the average depth of the tree
     fn avg_depth(&self) -> f32 {
         self.tree.avg_depth()
     }
 
+    /// get the max depth of the tree
     fn max_depth(&self) -> u8 {
         self.tree.max_depth()
     }
 
+
+    /// get the stats of depth at the root (raw_move, avg depth, max depth)
     fn depth_stats(&self) -> Vec<(u16, f32, u16)> {
         self.tree.root_depths()
     }
 
+    /// get the number of nodes in the tree
     fn node_count(&self) -> usize { self.tree.node_count() }
 
 }

@@ -1,3 +1,6 @@
+"""
+run the full self play training loop locally
+"""
 # import nessesary libraries
 import torch
 import torch.nn as nn
@@ -12,9 +15,6 @@ from torch.utils.data import DataLoader, Dataset
 import shutil
 import random
 from engine_clients.teiInterface import TeiEngine
-
-
-# connect to google drive
 
 
 
@@ -65,20 +65,35 @@ VALUE_BLOCKS = 1
 
 
 class ResBlock(nn.Module):
-    def __init__(self, ch):
+    """
+    conv block, add he input to the output
+    """
+    def __init__(self, ch: int):
+        """
+
+        :param ch: the number of channels
+        """
         super().__init__()
         self.conv1 = nn.Conv2d(ch, ch, 3, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(ch)
         self.conv2 = nn.Conv2d(ch, ch, 3, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(ch)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        do a forward pass
+        :param x: input
+        :return: output
+        """
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
         return F.relu(out + x)
 
 
 class TakNet(nn.Module):
+    """
+    a copy of the TakNet model structure, see model/tak_net.py for documentation
+    """
     def __init__(self, in_ch=IN_CHANNELS, tr_ch=TRUNK_CHANNELS, tr_bl=TRUNK_BLOCKS, pol_ch=POLICY_OUTPUT_CHANNELS, pol_bl=POLICY_BLOCKS, val_size=VALUE_NET_SIZE, val_bl=VALUE_BLOCKS,):
         super().__init__()
         trunk_ops: List[nn.Module] = [
@@ -111,7 +126,7 @@ class TakNet(nn.Module):
         # value_ops.append(nn.Softmax(dim=1)) #value head is now logits instead of probabilities
         self.value = nn.Sequential(*value_ops)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         x = self.trunk(x)
         return self.policy(x), self.value(x) # value output, 0 = loss, 1 = draw, 2 = win
 
@@ -130,8 +145,14 @@ POLICY_LEN = 251 * 36
 INPUT_LEN = 25 * 36
 
 
-def split_game_ids(db_path, val_frac=0.05, seed=42):
-    """Split by game, never by row. Capped games (outcome 0) are excluded."""
+def split_game_ids(db_path: str, val_frac: float=0.05, seed: int=42) -> tuple[list[int], list[int]]:
+    """
+    Split by game, never by row. Capped games (outcome 0) are excluded.
+    :param db_path: the path to the database
+    :param val_frac: the fraction of the database to use for validation
+    :param seed: the random seed to use for shuffling
+    :return: two lists of ids, a list of training ids, a list of validation ids
+    """
     conn = sqlite3.connect(db_path)
     ids = [r[0] for r in conn.execute("SELECT id FROM self_play_games WHERE outcome != 0")]
     conn.close()
@@ -141,7 +162,7 @@ def split_game_ids(db_path, val_frac=0.05, seed=42):
     return ids[n_val:], ids[:n_val]          # train_ids, val_ids
 
 
-def load_selfplay_tensors(db_path, game_ids, device, chunk=4096):
+def load_selfplay_tensors(db_path: str, game_ids: list[int], device, chunk=4096):
     """Encode every position once and keep the whole set on `device`.
 
     Replaces the old per-row Dataset: encoding happens once instead of every
@@ -150,6 +171,11 @@ def load_selfplay_tensors(db_path, game_ids, device, chunk=4096):
 
     The policy target is kept sparse (visited moves only) and made dense per
     batch with dense_targets(), which saves ~36 KB of memory per position.
+    :param db_path: the path to the database
+    :param game_ids: the list of game ids to load
+    :param device: the torch device to load the tensors on
+    :param chunk: the number of positions to encode at once
+    :return: a dict of tensors, and a dict of metadata about the games
     """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -271,7 +297,12 @@ ENGINE_PROBS = (
 )
 
 
-def setup_db(db_path=SELF_PLAY_DB):
+def setup_db(db_path: str=SELF_PLAY_DB) -> sqlite3.Connection:
+    """
+    sets up the database for self play
+    :param db_path: the path to create the database at
+    :return: the database connection
+    """
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript("""
@@ -317,16 +348,32 @@ ENCODER_VERSION = 2
 VISIT_DTYPE = np.dtype([("move", "<u2"), ("n", "<u4")])   # 2 + 4 = 6 bytes per entry
 
 def pack_visits(visit_counts):
-    """visit_counts: list of (move_raw, visits). Keeps only visited moves."""
+    """
+    visit_counts: list of (move_raw, visits). Keeps only visited moves.
+    :param visit_counts: compress visit counts to bytes
+    :return: bytes of visit counts
+    """
     arr = np.array([(m, n) for m, n in visit_counts if n > 0], dtype=VISIT_DTYPE)
     return arr.tobytes()
 
 def unpack_visits(blob):
+    """
+    unpacks vist counts from bytes
+    :param blob: the bytes
+    :return: the visit counts
+    """
     arr = np.frombuffer(blob, dtype=VISIT_DTYPE)
     return [(int(m), int(n)) for m, n in arr]          # back to a list of tuples
 
 
-def sample_move(visit_counts, seed: int, T=TEMP):
+def sample_move(visit_counts, seed: int, T: float=TEMP) -> int:
+    """
+    sample a move from the distribution of visit counts, with temperature T.
+    :param visit_counts: visit counts per move
+    :param seed: the seed to use for sampling
+    :param T: the temperature
+    :return: the raw move
+    """
     rng = np.random.default_rng(seed)
     moves = np.array([m for m, n in visit_counts])
     visits = np.array([n for m, n in visit_counts], dtype=np.float64)
@@ -336,6 +383,12 @@ def sample_move(visit_counts, seed: int, T=TEMP):
 
 
 def copy_db(conn: sqlite3.Connection, copy_path):
+    """
+    copy the content of a database into another database path, it will empy the second database
+    :param conn: the database to copy from
+    :param copy_path: the database path to copy to
+    :return:
+    """
     other = sqlite3.connect(copy_path)
     conn.backup(other)
     other.close()
@@ -343,7 +396,7 @@ def copy_db(conn: sqlite3.Connection, copy_path):
 
 class Slot:
     """One game in progress, plus the search for its current move."""
-    def __init__(self, komi, seed):
+    def __init__(self, komi: int, seed: int):
         self.game = tak_engine.Tak(komi=komi)
         self.seed = seed
         self.ply = 0
@@ -358,7 +411,7 @@ class Group:
     Each group has its own pinned input/output buffers, so one group can be
     on the GPU while the CPU collects leaves for the other.
     """
-    def __init__(self, max_rows, pin):
+    def __init__(self, max_rows: int, pin):
         self.slots = []
         self.spans = []          # (slot, row offset, n rows) from the last collect
         self.collected = False   # True between collect and finish
@@ -384,8 +437,22 @@ class SelfPlayRunner:
       * The forward pass runs in float16 autocast with channels_last, and transfers
         use pinned memory so they can overlap with other work.
     """
-    def __init__(self, model_path, komi, max_sims, n_parallel, leaves_per_game,
-                 c_puct, urgency, alpha, eps, temp_plies, max_ply):
+    def __init__(self, model_path: str, komi: int, max_sims: int, n_parallel: int, leaves_per_game: int,
+                 c_puct: float, urgency: float, alpha: float, eps: float, temp_plies: int, max_ply: int):
+        """
+
+        :param model_path: the path to the model to load
+        :param komi: the komi to use
+        :param max_sims: the max sims per position
+        :param n_parallel: the number of games to run in parallel
+        :param leaves_per_game: the leaves per game
+        :param c_puct: how much to prioritize the initial policy
+        :param urgency: how much to prioritize unexplored nodes
+        :param alpha: how spiky the noise is, lower values mean spiker noise
+        :param eps: how much the policy is composed of noise
+        :param temp_plies: how many plies are sampled with tempature
+        :param max_ply: the maximum number of moves per game
+        """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.cuda = self.device.type == "cuda"
 
@@ -413,7 +480,12 @@ class SelfPlayRunner:
         self.per_group = per_group
 
     # ---- per game ----
-    def new_search(self, slot):
+    def new_search(self, slot: Slot):
+        """
+
+        :param slot: the slot to create a search for
+        :return:
+        """
         slot.search = tak_engine.Search(slot.game.to_tps(), urgency=self.urgency,
                                         c_puct=self.c_puct, komi=self.komi,
                                         eval_cache=EVAL_CACHE, cache_max_age=CACHE_MAX_AGE)
@@ -508,6 +580,13 @@ class SelfPlayRunner:
         group.collected = False
 
     def run(self, num_games, conn, save_path):
+        """
+        run the self play games
+        :param num_games: number of games to run
+        :param conn: the database connection to use
+        :param save_path: the path to save the games to
+        :return:
+        """
         rand = np.random.default_rng()
         started = 0
         finished = 0
@@ -570,7 +649,21 @@ class SelfPlayRunner:
 
 @torch.no_grad()
 def run_engine_games(model_path, engine_probs, num_games, komi, max_sims, c_puct, urgency, alpha, eps, max_ply, conn: sqlite3.Connection):
-    """plays games against strong engines for training"""
+    """
+    plays games against strong engines for training
+    :param model_path: the path of the model to use
+    :param engine_probs: the probabilities for each engine to be used
+    :param num_games: the number of games to play
+    :param komi: the komi to use in the games
+    :param max_sims: the maximum number of positions allowed for both model and engine
+    :param c_puct: how much the initial policy is prioritized
+    :param urgency: how much the unexplored nodes are prioritized
+    :param alpha: how spiky the noise is, lower values mean spiky noise
+    :param eps: how much the policy is composed of noise
+    :param max_ply: the maximum number of moves per game
+    :param conn: the database connection to use
+    :return:
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     info = torch.load(model_path, map_location=device)
@@ -687,6 +780,12 @@ def run_engine_games(model_path, engine_probs, num_games, komi, max_sims, c_puct
 
 
 def run_self_play(model_path, save_path):
+    """
+    generate game to train against, both against strong engines and against itself
+    :param model_path: the model checkpoint path
+    :param save_path: the path to save the games to
+    :return:
+    """
     model_path = f"model_checkpoints/{model_path}"
     conn = setup_db()
     print('starting...')
@@ -739,6 +838,7 @@ DIRS = [(1, 0), (-1, 0), (0, -1), (0, 1)]          # engine order + - < >
 TRANSFORMS = [(k, flip) for flip in (False, True) for k in range(4)]
 
 def apply_T(t, k, flip):
+    """transform by k rotations, with an optional flip"""
     t = torch.rot90(t, k, dims=(-2, -1))
     return torch.flip(t, dims=(-1,)) if flip else t
 
@@ -786,6 +886,18 @@ def augment(x, legal, target, played, perms):
 
 # ---------------- loss ----------------
 def compute_losses(policy, value_logits, legal, target, played, value_class, q, sampled):
+    """
+    compute the losses for the policy and value heads against targets
+    :param policy: the policy output of the model
+    :param value_logits: the value output of the model
+    :param legal: a legal moves mask for the assignment
+    :param target: the policy target
+    :param played: the index of the move played
+    :param value_class: the ultimate outcome of the game
+    :param q: the refined value estimate of a position
+    :param sampled: if the move was sampled using temp
+    :return: total loss, info
+    """
     # losses run in float32 even under autocast: -1e9 overflows float16 and would give NaNs
     policy, value_logits = policy.float(), value_logits.float()
     logits = policy.flatten(1).masked_fill(~legal, -1e9)
@@ -856,6 +968,13 @@ def collect_training_examples(version, db_path):
 
 # ---------------- main ----------------
 def run_training(LOAD_PATH, SAVE_PATH, version):
+    """
+    run training
+    :param LOAD_PATH: load path of the model to train
+    :param SAVE_PATH: save path of the model post training
+    :param version: model version
+    :return:
+    """
     torch.manual_seed(0)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     use_amp = device.type == "cuda"

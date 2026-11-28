@@ -5,7 +5,7 @@ import tak_engine
 import sys
 import os
 
-FILE_START = 'version_14_36_vs_takzero_' # the leading part of a ptn game file
+FILE_START = 'version_14_62_vs_takzero_' # the leading part of a ptn game file
 
 
 files = os.listdir('ptn_files')

@@ -28,6 +28,13 @@ DIRS = [(1, 0), (-1, 0), (0, -1), (0, 1)]          # engine order + - < >
 TRANSFORMS = [(k, flip) for flip in (False, True) for k in range(4)]
 
 def apply_T(t, k, flip):
+    """
+    transform by k rotations, with an optional flip
+    :param t: the tensor to transform
+    :param k: the number of rotations
+    :param flip: if to flip
+    :return: the new tensor
+    """
     t = torch.rot90(t, k, dims=(-2, -1))
     return torch.flip(t, dims=(-1,)) if flip else t
 
@@ -75,6 +82,19 @@ def augment(x, legal, target, played, perms):
 
 # ---------------- loss ----------------
 def compute_losses(policy, value_logits, legal, target, played, value_class, q, sampled, tiltak_values=None):
+    """
+    compute the losses for the policy and value heads against targets
+    :param policy: the policy output of the model
+    :param value_logits: the logits output from the value head
+    :param legal: legal moves mask
+    :param target: target policy
+    :param played: indexes of actual moves played
+    :param value_class: actual outcome of the game
+    :param q: refined value estimate of a position
+    :param sampled: if the positon was sampled with tempature
+    :param tiltak_values: the tiltak value estimate of the position
+    :return:
+    """
     logits = policy.flatten(1).masked_fill(~legal, -1e9)
     logp = F.log_softmax(logits, dim=1)
 
@@ -107,6 +127,14 @@ def compute_losses(policy, value_logits, legal, target, played, value_class, q, 
 
 # ---------------- batch preparation ----------------
 def prepare(batch, bufs, komi, device):
+    """
+    prepare a set of inputs for the input
+    :param batch: the batch from the database
+    :param bufs: the buffers of the proper size for the encoder
+    :param komi: the komi used
+    :param device: the device to load the tensors to
+    :return: input, legal_mask, target, played, value_class, q, sampled
+    """
     tps, target, played, value_class, q, sampled = batch
     n = len(tps)
     inputs, inputs_np, masks, masks_np = bufs
@@ -121,6 +149,12 @@ def prepare(batch, bufs, komi, device):
 _tiltak = Tiltak(half_komi=4)
 
 def get_tiltak_evals(tps: list[str], device):
+    """
+    get the tiltak evals for the provided tps positions
+    :param tps: the tps positions to evaluate
+    :param device: the device to move the tensors to
+    :return: a tensor of the tiltak values
+    """
     n = len(tps)
     values = torch.zeros(n)
     for i in range(n):
@@ -131,6 +165,10 @@ def get_tiltak_evals(tps: list[str], device):
 
 # ---------------- main ----------------
 def run():
+    """
+    run training
+    :return:
+    """
     torch.manual_seed(0)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("training on", device)

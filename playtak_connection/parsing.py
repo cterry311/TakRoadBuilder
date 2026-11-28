@@ -1,3 +1,6 @@
+"""
+the file containing the functions for parsing to and from server notation and ptn notation
+"""
 import re
 
 FILES = "abcdefgh"

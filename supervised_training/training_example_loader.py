@@ -1,6 +1,9 @@
 from torch.utils.data import Dataset, DataLoader
 
 class TakDataset(Dataset):
+    """
+    a dataset for containing game positions
+    """
     def __init__(self, rows):               # rows: list of (tps, move_index, result)
         self.rows = rows
     def __len__(self):

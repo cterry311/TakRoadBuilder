@@ -10,9 +10,11 @@ use crate::game::{Tak, Move, GameResult, transform_move};
 const POLICY_LEN: usize = 251 * 36;
 const INPUT_LEN: usize = 25 * 36;
 
+/// values for proof propagation
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Proven { Unknown, Win, Loss, Draw }
 
+/// node struct represents a single position in the game
 #[derive(Clone)]
 struct Node {
     mv: Move,            // move that leads INTO this node
@@ -29,6 +31,8 @@ struct Node {
 }
 
 impl Node {
+
+    /// get the q value for the node
     fn q(&self) -> f32 {
         if self.n == 0 { 0.0 } else { self.w / self.n as f32 }
     }
@@ -41,6 +45,7 @@ impl Node {
 
 }
 
+/// a pending leaf, waiting for the network to set the value and policy
 struct Pending {
     path: Vec<usize>,    // node indices, root .. leaf
     legal: Vec<Move>,    // legal moves at the leaf, captured while the game was there
@@ -67,6 +72,7 @@ struct EvalCache {
 }
 
 impl EvalCache {
+    /// create a new cache that will drop entries not used for `max_age` rebases
     fn new(max_age: u32) -> EvalCache {
         EvalCache { map: HashMap::new(), max_age, age: 0, hits: 0, misses: 0 }
     }
@@ -89,6 +95,27 @@ impl EvalCache {
         found
     }
 
+    /// Inserts a cache entry for the given position hash.
+    ///
+    /// Each legal move is transformed using the provided symmetry index, converted to
+    /// its raw `u16` representation, paired with its corresponding prior
+    /// probability, and sorted by move value to produce a canonical ordering.
+    ///
+    /// The resulting entry stores the canonicalized priors, the supplied value
+    /// estimate, and the current cache age as `last_used`.
+    ///
+    /// # Parameters
+    ///
+    /// - `hash`: Unique hash key identifying the position.
+    /// - `sym`: Symmetry index used to canonicalize legal moves.
+    /// - `legal`: Slice of legal moves for the position.
+    /// - `priors`: Slice of prior probabilities corresponding to `legal`.
+    /// - `value`: Value estimate associated with the position.
+    ///
+    /// # Notes
+    ///
+    /// If `legal` and `priors` have different lengths, only pairs up to the
+    /// shorter slice length are inserted.
     fn insert(&mut self, hash: u64, sym: usize, legal: &[Move], priors: &[f32], value: f32) {
         let mut canon: Vec<(u16, f32)> = legal.iter().zip(priors)
             .map(|(&mv, &p)| (transform_move(mv, sym).raw(), p))
@@ -97,6 +124,7 @@ impl EvalCache {
         self.map.insert(hash, CacheEntry { priors: canon, value, last_used: self.age });
     }
 
+    /// to be called when the tree is rebased, drops entries that are too old
     fn on_rebase(&mut self) {
         self.age += 1;
         let (age, max_age) = (self.age, self.max_age);
@@ -195,9 +223,12 @@ impl Tree {
 
     // +1 on every node, NO alternation: each node's own q looks good,
     // so its parent (which negates) sees the path as bad.
+    /// apply a virtual loss when true values are not known yet
     fn apply_virtual_loss(&mut self, path: &[usize]) {
         for &i in path { self.nodes[i].n += 1; self.nodes[i].w += 1.0; }
     }
+
+    /// remove virtual loss applied to ready tree to receive actual values
     fn remove_virtual_loss(&mut self, path: &[usize]) {
         for &i in path { self.nodes[i].n -= 1; self.nodes[i].w -= 1.0; }
     }
@@ -283,6 +314,7 @@ impl Tree {
         }
     }
 
+    /// get the move with the most visits from the root
     pub fn best_move(&self) -> Move {
         let root = &self.nodes[0];
         let mut best: usize = root.first_child as usize;
@@ -292,11 +324,18 @@ impl Tree {
         self.nodes[best].mv
     }
 
+    /// how many leaves are waiting to be expanded
     pub fn pending_len(&self) -> usize { self.pending.len() }
-    pub fn sims(&self) -> u32 { self.nodes[0].n }        // valid between submit and collect, when virtual loss is cleared
+
+    /// how mnay simulations at the root
+    pub fn sims(&self) -> u32 { self.nodes[0].n }// valid between submit and collect, when virtual loss is cleared
+
+    /// is the root position in a terminal state
     pub fn is_over(&self) -> bool { self.root.result != GameResult::Ongoing }
 
 
+    /// per root child: (raw move, visits, -q), in the same order as root_stats.
+    /// For the `visits` and `-q` of each multipv line.
     pub fn root_stats(&self) -> Vec<(u16, u32, f32)> {    // (raw move, visits, -q) for logging and later training targets
         let root = &self.nodes[0];
         (root.first_child..root.first_child + root.n_children as u32)
@@ -304,6 +343,7 @@ impl Tree {
             .collect()
     }
 
+    /// the q value at the root
     pub fn root_q(&self) -> f32 {
         self.nodes[0].q()
     }
@@ -314,6 +354,11 @@ impl Tree {
         format!("{{ \"tps\": \"{}\", \"nodes\": [{}] }}", self.root.to_tps(), child_strs.join(", "))
     }
 
+    /// add noise to the root
+    /// # Arguments
+    /// * `alpha` - how spread out the noise is, lower values leads to more spiky noise
+    /// * `eps` - how much noise to apply, 1 will set the policy to 100% noise
+    /// * `seed` - the seed for the pseudorandom noise generator
     pub fn add_root_noise(&mut self, alpha: f32, eps: f32, seed: u64) {
         // 1. Find the root's child range. Copy the numbers out so no borrow is held.
         let (start, end) = {

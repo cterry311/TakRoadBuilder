@@ -19,11 +19,23 @@ test_loader = DataLoader(TakDataset(test_positions), batch_size=128, shuffle=Tru
 DIRS = [(1, 0), (-1, 0), (0, -1), (0, 1)]
 TRANSFORMS = [(k, flip) for flip in (False, True) for k in range(4)]   # 8 total
 
-def apply_T(t, k, flip):
+def apply_T(t: torch.Tensor, k: int, flip: bool) -> torch.Tensor:
+    """
+    apply a transformation to a tensor
+
+    :param t: the tensor to transform
+    :param k: how many times to rotate
+    :param flip: if to reflect
+    :return: the new tensor
+    """
     t = torch.rot90(t, k, dims=(-2, -1))
     return torch.flip(t, dims=(-1,)) if flip else t
 
 def build_perms():
+    """
+    build out all possible permutations of rotations and reflections
+    :return:
+    """
     base = torch.arange(36).reshape(6, 6)
     perms = []
     for k, flip in TRANSFORMS:
@@ -52,6 +64,33 @@ def build_perms():
 PERMS = build_perms()
 
 def augment(x, legal, target, perms):
+    """
+    Apply a randomly selected geometric transform to each batch element and keep
+    related action data in sync.
+
+    For every item, one transform from the configured transform set is sampled.
+    The observation tensor is transformed spatially, the legal-action mask is
+    permuted, and target indices are remapped consistently with the selected
+    transform.
+
+    :param x: Batch of observation tensors with shape ``(n, 25, 6, 6)``.
+    :type x: torch.Tensor
+    :param legal: Boolean legal-action mask with shape ``(n, 9036)``.
+    :type legal: torch.Tensor
+    :param target: Target action indices with shape ``(n,)``.
+    :type target: torch.Tensor
+    :param perms: Transform-specific action permutations. Each entry maps original
+        action indices to their transformed indices and must be compatible with the
+        action dimension of ``legal`` and with values in ``target``.
+    :type perms: collections.abc.Sequence[torch.Tensor]
+    :returns: Transformed observations, transformed legal-action masks, and
+        transformed target action indices.
+    :rtype: tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    :raises RuntimeError: If tensor devices, dtypes, shapes, or indexing
+        constraints are incompatible with the required transformations.
+    :raises IndexError: If a permutation or target index is outside the valid
+        action range.
+    """
     # x: (n,25,6,6)  legal: (n,9036) bool  target: (n,) int64, all on the same device
     n = x.shape[0]
     ts = torch.randint(0, 8, (n,), device=x.device)
@@ -67,7 +106,17 @@ def augment(x, legal, target, perms):
     return x_out, legal_out, target_out
 
 
-def run_training(model_load_path, model_save_path, EPOCHS=100, value_weight=0.5, params=None):
+def run_training(model_load_path: str, model_save_path: str, EPOCHS: int=100, value_weight: float=0.5, params=None):
+    """
+    run training, save model to model_save_path
+
+    :param model_load_path: the path to the model to run training with
+    :param model_save_path: the path to save the new model to
+    :param EPOCHS: the number of epochs to run for
+    :param value_weight: how much the value loss is weighted compared to the policy loss
+    :param params: the parameters to pass to the model
+    :return:
+    """
     if params is None:
         params = {}
     if model_load_path is None:

@@ -1,19 +1,38 @@
+"""
+has basic bot classes, these are primitive and unused
+"""
 from game import Tak
 from abc import ABC, abstractmethod
 import random
 
 class TakBot(ABC):
+    """
+    basic abstract class for TakBot
+    """
     def __init__(self):
         pass
 
     @abstractmethod
-    def make_move(self, game : Tak, do_move=True, curve_power=None):
+    def make_move(self, game : Tak, do_move: bool=True, curve_power=None) -> str:
+        """
+        get a move to make
+        :param game: the game to make the move from
+        :param do_move: if to do the move
+        :param curve_power: the power at which to sample the move
+        :return: the ptn move
+        """
         pass
 
 
 class BruteBot(TakBot):
+    """
+    a bot that brute forces a position looking for a forced win, avoiding forced losses
+    """
+    def __init__(self, depth: int):
+        """
 
-    def __init__(self, depth):
+        :param depth: the depth at which to filter
+        """
         super().__init__()
         self.depth = depth
 
@@ -26,8 +45,21 @@ class BruteBot(TakBot):
 
 
 class EvalBot(TakBot):
+    """
+    a bot that preforms a basic evaluation of a position
+    """
+    def __init__(self, depth: int, flat_weight: int=1, road_tile_weight: int=1, capstone_weight: float=0.5, control_weight: float=1, imprisoned_weight: float=1, self_control_weight: float=1, wall_weight: float=1):
+        """
 
-    def __init__(self, depth, flat_weight=1, road_tile_weight=1, capstone_weight=0.5, control_weight=1, imprisoned_weight=1, self_control_weight=1, wall_weight=1):
+        :param depth: the depth at which to brute force search
+        :param flat_weight: the weight showing flats give
+        :param road_tile_weight: the weight road tiles give
+        :param capstone_weight: the weight capstones have
+        :param control_weight: the weight for controling squares
+        :param imprisoned_weight: the weight for improsoning enemy peices
+        :param self_control_weight: the weight for imprisoning own peices
+        :param wall_weight: the weight walls have
+        """
         super().__init__()
         self.depth = depth
         self.flat_weight = flat_weight
@@ -38,7 +70,13 @@ class EvalBot(TakBot):
         self.self_control_weight = self_control_weight
         self.wall_weight = wall_weight
 
-    def eval(self, move : str, game : Tak):
+    def eval(self, move : str, game : Tak) -> float:
+        """
+        evaluate a position
+        :param move: the ptn move
+        :param game: the game to take the move from
+        :return: the score of the move
+        """
         if game.turn in [0, 2]:
             own_flat = 0
             enemy_flat = 1

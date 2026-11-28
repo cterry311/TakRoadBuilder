@@ -28,6 +28,11 @@ conn.commit()
 
 # 0 is training, 1 is validation, 2 is testing
 def fetch_split(split):
+    """
+    select only positions which are in the given split
+    :param split: the split to use
+    :return:
+    """
     cursor.execute('''
         SELECT p.game_result, p.tps, p.move_raw
         FROM training_positions p

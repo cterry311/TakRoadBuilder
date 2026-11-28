@@ -22,7 +22,15 @@ def split_game_ids(db_path, val_frac=0.05, seed=42):
 
 
 class SelfPlayDataset(Dataset):
+    """
+    the database for containing training games
+    """
     def __init__(self, db_path, game_ids=None):
+        """
+
+        :param db_path: the path to the database file
+        :param game_ids: the game ids to pull from the database, only use positions from the given games
+        """
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
 
@@ -43,6 +51,10 @@ class SelfPlayDataset(Dataset):
         self.rows = [tuple(r) for r in rows if r[0] in games]
 
     def _build_metadata(self):
+        """
+        determine the config from the games
+        :return: the game config
+        """
         g = list(self.games.values())
         komis = {x["komi"] for x in g}
         versions = {x["encoder_version"] for x in g}
@@ -59,12 +71,25 @@ class SelfPlayDataset(Dataset):
 
     @property
     def komi(self):
+        """
+        the komi used in the games
+        :return:
+        """
         return self.metadata["komi"]
 
     def __len__(self):
+        """
+        the number of examples
+        :return:
+        """
         return len(self.rows)
 
     def __getitem__(self, i):
+        """
+        get a specific position from the database
+        :param i:
+        :return:
+        """
         game_id, ply, tps, move_raw, sampled, q, blob = self.rows[i]
         outcome = self.games[game_id]["outcome"]       # 1 white, 2 black, 3 draw
 

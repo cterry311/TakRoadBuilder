@@ -1,3 +1,7 @@
+"""
+a python implementation of the game of tak,
+this code is deprecated and unused
+"""
 import copy
 
 _sizes = {
@@ -45,8 +49,14 @@ def _parse_tps_stack(token: str) -> list: # AI generated method
 
 
 class Tak:
-
+    """
+    the take game
+    """
     def __init__(self, board_size: int):
+        """
+
+        :param board_size: the size of the game to create
+        """
         self.turn_states = ['white_first', 'black_first', 'white', 'black', 'draw', 'white_win', 'black_win']
         self.piece_types = ['white_flat', 'black_flat', 'white_wall', 'black_wall', 'white_capstone', 'black_capstone']
         self.board_size = board_size
@@ -63,7 +73,13 @@ class Tak:
                 row.append([])
             self.board.append(row)
 
-    def _handle_flat_win(self, white_count, black_count):
+    def _handle_flat_win(self, white_count: int, black_count: int):
+        """
+        handle the condition where a flat win is triggered, set the proper turn
+        :param white_count: the number of white flats showing
+        :param black_count: the number of black flats showing
+        :return:
+        """
         if white_count > black_count:
             self.turn = 5
         if black_count > white_count:
@@ -71,7 +87,11 @@ class Tak:
         if white_count == black_count:
             self.turn = 4
 
-    def _find_road_win(self):
+    def _find_road_win(self) -> int:
+        """
+        check if a road win exists
+        :return: 1 if white has road win, -1 if black has road win, 0 if no road win exists
+        """
         changed = []
         last_move = self.move_history[-1]
         if last_move['type'] == 'place_stone':
@@ -166,6 +186,10 @@ class Tak:
         return 0
 
     def display_board(self):
+        """
+        render the board in the console using asci characters
+        :return:
+        """
         simplified_board = []
         for i in range(self.board_size):
             simplified_board.append([])
@@ -183,6 +207,10 @@ class Tak:
             print()
 
     def _advance_turn(self):
+        """
+        advance the game forward by one turn, handle a win if it exists
+        :return:
+        """
         white_stones_used = _sizes[self.board_size][0] - self.white_stones
         black_stones_used = _sizes[self.board_size][0] - self.black_stones
         white_capstones_used = _sizes[self.board_size][1] - self.white_capstones
@@ -223,6 +251,10 @@ class Tak:
         self._handle_normal_turn_advance()
 
     def _handle_normal_turn_advance(self):
+        """
+        advance turn normally, does not handle win, assumes normal turn progression
+        :return:
+        """
         if self.turn == 0:
             self.turn = 1
             return
@@ -237,6 +269,11 @@ class Tak:
             return
 
     def _handle_board_change(self, move: str):
+        """
+        change the board based on the provided move, move the proper stacks, place the proper stone
+        :param move: the ptn move
+        :return:
+        """
         initial_turn = self.turn
         is_movement = False
         if self.turn in [4, 5, 6]:
@@ -451,10 +488,23 @@ class Tak:
         raise ValueError('Invalid PTN format  ' + move)
 
     def make_move(self, move: str):
+        """
+        make the given move in the game
+        :param move: the move in ptn format
+        :return:
+        """
         self._handle_board_change(move)
         self._advance_turn()
 
-    def _enumerate_sequences(self, n: int, k: int, soft_stop: bool, first_step: bool) -> list:
+    def _enumerate_sequences(self, n: int, k: int, soft_stop: bool, first_step: bool) -> list[tuple[int, ...]]:
+        """
+        get all move sequences of length with a given stack height
+        :param n: the stack of the height to move
+        :param k: the length available to topple the stack
+        :param soft_stop: if the sequence has a soft stop, happens if the stack has a capstone, and there is a wall in the way
+        :param first_step: the first time this method is being called recursivly
+        :return: a list of all possible move sequences of length k, with a stack of height n
+        """
         all_sequences = []
         if not first_step:
             all_sequences.append(())
@@ -470,7 +520,13 @@ class Tak:
                 all_sequences.append((i,) + seq)
         return all_sequences
 
-    def _handle_movement_enumeration(self, x: int, y: int):
+    def _handle_movement_enumeration(self, x: int, y: int) -> list[str]:
+        """
+        enumerate all possible movements of a stack from a given position, in all directions, get all legal moves pertaining to that square
+        :param x: the x position of the square
+        :param y: the y position of the square
+        :return: list of all ptn moves from the designated square
+        """
         legal_moves = []
         stack_size = min(len(self.board[y][x]), self.board_size)
 
@@ -570,7 +626,11 @@ class Tak:
 
         return legal_moves
 
-    def _get_all_moves_base(self):
+    def _get_all_moves_base(self) -> list[str]:
+        """
+        get all legal moves from the current position
+        :return: list of all ptn moves from the current position
+        """
         legal_moves = []
         if self.turn in [4, 5, 6]:
             return legal_moves
@@ -593,13 +653,24 @@ class Tak:
                         legal_moves.extend(self._handle_movement_enumeration(x, y))
         return legal_moves
 
-    def get_all_legal_moves(self, filtering=-1, do_pruning=True, include_result=False):
+    def get_all_legal_moves(self, filtering: int=-1, do_pruning: bool=True, include_result: bool=False) -> list[str] | tuple[list[str], int]:
+        """
+        get all moves filtered by the given depth
+        :param filtering: how deep to filter the moves, -1 for no filtering, 0 for filtering only on immediate consequences, further than that for looking 1 additional move ahead
+        :param do_pruning: if a winning move is found, return immediately, if set to false, it will get all winning moves rather than only the first one.
+        :param include_result: include the proven outcome, -1 for loss, 1 for win, 0 for draw or unknown
+        :return: the list of all ptn moves, if include results, the result and the ptn moves are returned.
+        """
         legal_moves = self._get_all_moves_base()
         if filtering == -1:
             return legal_moves
         return self._filter_recursive(legal_moves, include_result=include_result, remaining_depth=filtering, do_pruning=do_pruning)
 
     def _copy(self):
+        """
+        get a copy of the game
+        :return:
+        """
         new_game = Tak(self.board_size)
         new_game.turn = self.turn
         new_game.white_stones = self.white_stones
@@ -611,6 +682,10 @@ class Tak:
         return new_game
 
     def undo_move(self):
+        """
+        undo the last move, return the game to its previous state
+        :return:
+        """
         last_move = self.move_history.pop()
         self.turn = last_move['prev_turn']
         if last_move['type'] == 'place_stone':
@@ -649,13 +724,25 @@ class Tak:
             if last_move['smashed_stone']:
                 self.board[y + (len(last_move['carry_pattern']) * y_modifier)][x + (len(last_move['carry_pattern']) * x_modifier)][-1] += 2
 
-    def simulate_move(self, move):
+    def simulate_move(self, move: str) -> int:
+        """
+        get the outcome of the move, without changing the game state
+        :param move: the pnt move
+        :return: the turn after making the move
+        """
         self.make_move(move)
         result = self.turn
         self.undo_move()
         return result
 
-    def _filter_base(self, moves, include_result=False, do_pruning=True):
+    def _filter_base(self, moves: list[str], include_result: bool=False, do_pruning: bool=True) -> list[str] | tuple[list[str], int]:
+        """
+        filter the given moves, return only the proven best moves
+        :param moves: all legal moves from the current position
+        :param include_result: if to return the proven outcome of the moves in the return, -1 for loss, 1 for win, 0 for draw or unknown
+        :param do_pruning: if to do early returns for winning moves
+        :return: the list of all ptn moves, if include results, the result and the ptn moves are returned
+        """
         winning_moves = []
         neutral_moves = []
         losing_moves = []
@@ -685,7 +772,15 @@ class Tak:
             return losing_moves, -1
         return losing_moves
 
-    def _filter_recursive(self, moves, include_result=False, remaining_depth=0, do_pruning=True):
+    def _filter_recursive(self, moves: list[str], include_result: bool=False, remaining_depth: int=0, do_pruning: bool=True) -> list[str] | tuple[list[str], int]:
+        """
+        do recursive filtering of the given moves, return only the proven best moves
+        :param moves: all legal moves from the current position
+        :param include_result: if to include the result in the return, -1 for loss, 1 for win, 0 for draw or unknown
+        :param remaining_depth: the remaining depth at which to filter
+        :param do_pruning: if to do early returns for winning moves
+        :return: a list of all ptn moves, if include results, the result and the ptn moves are returned
+        """
         level_1_filtered, result = self._filter_base(moves, include_result=True, do_pruning=do_pruning)
         if result == 1:
             if include_result:
@@ -727,10 +822,19 @@ class Tak:
             return losing_moves, -1
         return losing_moves
 
-    def __eq__(self, other):
+    def __eq__(self, other: Tak) -> bool:
+        """
+        is the provided game equal to this game
+        :param other: another instance of Tak
+        :return: boolean equality
+        """
         return self.board == other.board and self.turn == other.turn and self.white_stones == other.white_stones and self.black_stones == other.black_stones and self.white_capstones == other.white_capstones and self.black_capstones == other.black_capstones
 
     def to_tps(self) -> str:
+        """
+        converts the game's current state to a tps string
+        :return: a tps string representing the current state of the game
+        """
         tps_string = ''
         for row_index in range(self.board_size - 1, -1, -1):
             tps_row = []

@@ -60,7 +60,7 @@ def roadbuilder_vs_tei(num_games: int, model_path: str, exe: str, time_limit: in
     white_losses = 0
     black_losses = 0
 
-    for i in range(num_games):
+    for i in range(89, num_games):
         game = tak_engine.Tak(komi=2)
         r_builder = RoadBuilderGame(model_path)
         moves = []
@@ -354,3 +354,8 @@ roadbuilder_vs_tei(100, 'model_checkpoints/version_14_62.pt', 'takzero.exe', sav
 # white wins: 4, white losses: 41, white draws: 5
 # black wins: 15, black losses: 24, black draws: 11
 # -173 elo
+
+# 13_62 vs takzero
+# wins: 3, losses: 83, draws: 14
+# white wins: 0, white losses: 43, white draws: 7
+# black wins: 3, black losses: 40, black draws: 7

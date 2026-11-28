@@ -15,7 +15,13 @@ MODEL.load_state_dict(info["weights"])
 MODEL.to(DEVICE).eval()  # eval() matters: BatchNorm must not use batch stats
 
 @torch.no_grad()
-def best_move(game: tak_engine.Tak, max_nodes):
+def best_move(game: tak_engine.Tak, max_nodes: int) -> tuple[str, list[tuple[int, float, float]], float, int]:
+    """
+    get the best move from the engine
+    :param game: the game to get the best move for
+    :param max_nodes: the maximum number of nodes allowed to be in the search tree
+    :return: best_move, stats, q_value, sims
+    """
     tree = tak_engine.Search(game.to_tps(), komi=2)
 
     while True:
@@ -54,6 +60,15 @@ conn.execute('''
 conn.commit()
 
 def save_move(game: tak_engine.Tak, depth, max_depth, max_nodes, cuttoff=None):
+    """
+    save moves to the opening book
+    :param game: the game to start the search from
+    :param depth: the current depth of recursion
+    :param max_depth: the maximum depth at which to save moves
+    :param max_nodes: the maximum number of nodes allowed to be in the search tree
+    :param cuttoff: a cutoff for visit count proportion, if provided a float, it will cutoff all moves that don't have a visit count within that preportion, if provided a list of floats, then it will cut off each depth with the float at each index
+    :return:
+    """
     if cuttoff is None:
         cuttoff = [0.05] * (max_depth + 1)
     hash_exists = conn.execute('''

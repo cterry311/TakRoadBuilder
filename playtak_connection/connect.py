@@ -1,3 +1,7 @@
+"""
+connect to playtak.com as a bot account
+uses the raw model files, not the onnx releases
+"""
 import socket, threading, time
 from engine_clients.roadbuilder import RoadBuilderGame, RoadBuilder
 import tak_engine
@@ -19,6 +23,10 @@ lock = threading.Lock()
 lines = queue.Queue()
 
 def reader():
+    """
+    read lines from the socket and put them in the queue
+    :return:
+    """
     while True:
         line = f_read.readline()
         if not line:
@@ -26,13 +34,22 @@ def reader():
         lines.put(line.strip())
 
 
-def send(line):
+def send(line: str):
+    """
+    write a line to the socket
+    :param line: the line to write
+    :return:
+    """
     with lock:
         print(">", line)
         f_write.write(line + "\n")
         f_write.flush()
 
 def pinger():
+    """
+    ping the socket every 30 seconds
+    :return:
+    """
     while True:
         time.sleep(30)
         send("PING")
@@ -43,24 +60,52 @@ threading.Thread(target=reader, daemon=True).start()
 
 
 class EventHandler(ABC):
+    """
+    abstact class for connecting and interacting with the server
+    """
     @abstractmethod
     def handle_event(self, line: str) -> EventHandler:
+        """
+        preform an action depending on the line recieved from the server
+
+        :param line: the line recieved from the server
+        :return: a instance of the EventHandler class, to replace the current handler, return self to not replace
+        """
         print("<", line)
         return self
 
 
     @abstractmethod
     def run_idle(self) -> EventHandler:
+        """
+        run an idle action, this is called when there are no lines to handle
+        :return: the event handler to replace this handler, return self to not replace
+        """
         pass
 
 class LoginEventHandler(EventHandler):
-    def __init__(self, user, password, future_handler: EventHandler):
+    """
+    the handler when initially connecting, handles the login process
+    """
+    def __init__(self, user: str, password: str, future_handler: EventHandler):
+        """
+
+        :param user: the username to login with
+        :param password: the password to login with
+        :param future_handler: the event handler to replace this handler once the login is complete
+        """
         self.user = user
         self.password = password
         self.logged_in = False
         self.future_handler = future_handler
 
     def handle_event(self, line):
+        """
+        login when requested, once logged in, send the future handler
+
+        :param line: the line recieved from the server
+        :return: self or future handler
+        """
         super().handle_event(line)
         if line.startswith("Login or Register"):
             send(f"Login {self.user} {self.password}")
@@ -70,13 +115,29 @@ class LoginEventHandler(EventHandler):
         return self
 
     def run_idle(self):
+        """
+        do nothing, if logged in, return the future handler, otherwise return self
+
+        :return: self or future handler
+        """
         if self.logged_in:
             return self.future_handler
         else:
             return self
 
 class SeekEventHandler(EventHandler):
-    def __init__(self, start_time, increment, komi, color, unrated):
+    """
+    event handler for seeking a game
+    """
+    def __init__(self, start_time: int, increment: int, komi: int, color: str, unrated: int):
+        """
+
+        :param start_time: the start time for the game clock in seconds
+        :param increment: the time increment for the game clock in seconds
+        :param komi: the komi for the game
+        :param color: the color, 'A' for any color, 'W' for white, 'B' for black
+        :param unrated: 0 for rated, 1 for unrated
+        """
         self.start_time = start_time
         self.increment = increment
         self.komi = komi
@@ -87,10 +148,19 @@ class SeekEventHandler(EventHandler):
         self.sent_seek = False
         self.opponent_name = None
 
-    def clone(self):
+    def clone(self) -> SeekEventHandler:
+        """
+        create a duplicate of itself, with its own parameters
+        :return: a copy of itself without internal state
+        """
         return SeekEventHandler(self.start_time, self.increment, self.komi, self.color, self.unrated)
 
     def handle_event(self, line):
+        """
+        if recieved the Game Start event, set internal state to accsepted
+        :param line: the line recieved from the server
+        :return: self
+        """
         super().handle_event(line)
         if line.startswith("Game Start"):
             self.game_no = int(line.split(" ")[2])
@@ -102,6 +172,10 @@ class SeekEventHandler(EventHandler):
         return self
 
     def run_idle(self):
+        """
+        if game has started, return a game even handler, otherwise return self
+        :return: self, or GameEventHandler
+        """
         if self.game_no is None:
             if not self.sent_seek:
                 send(f"Seek {6} {self.start_time} {self.increment} {self.color} {int(self.komi * 2)} {30} {1} {self.unrated} {0} ")  # Seek <size> <time> <increment> <color> <half_komi> <flats> <capstones> <unrated> <tournament?> # note, trailing space is important!!!
@@ -112,7 +186,14 @@ class SeekEventHandler(EventHandler):
 
 
 class AcceptEventHandler(EventHandler):
-    def __init__(self, challenger_name):
+    """
+    accept a game sought by somebody else
+    """
+    def __init__(self, challenger_name: str):
+        """
+
+        :param challenger_name: the username of the challenger to seek
+        """
         self.challenger_name = challenger_name
         self.sent_accept = False
         self.game_no = None
@@ -120,6 +201,11 @@ class AcceptEventHandler(EventHandler):
         self.game_settings = {}
 
     def handle_event(self, line):
+        """
+        if the line is a seek request from the challenger, accept it
+        :param line: the line recieved from the server
+        :return: self
+        """
         super().handle_event(line)
         if line.startswith("Seek new "):
             print(line)
@@ -139,10 +225,18 @@ class AcceptEventHandler(EventHandler):
             self.game_color = line.split(" ")[7]
         return self
 
-    def clone(self):
+    def clone(self) -> AcceptEventHandler:
+        """
+        create a duplicate of itself, with its own parameters
+        :return: AcceptEventHandler
+        """
         return AcceptEventHandler(self.challenger_name)
 
     def run_idle(self):
+        """
+        if game was accepted, return a game even handler, otherwise return self
+        :return: self or GameEventHandler
+        """
         if self.game_no is None:
             return self
         else:
@@ -158,6 +252,9 @@ class AcceptEventHandler(EventHandler):
 
 # temperature
 
+"""
+Difficutly settings for the bot
+"""
 DIFFICULTY_SETTINGS = {
     'beginner': {
             "c_puct": 1.5,
@@ -225,8 +322,21 @@ DIFFICULTY_SETTINGS = {
 }
 
 class GameEventHandler(EventHandler):
+    """
+    event handler for playing a game
+    """
+    def __init__(self, game_no: int, my_color: str, total_time: int, time_increment: int, komi: int, future_handler: EventHandler = None, opponent_name: str = None):
+        """
+        set up the game, send message to opponent describing how to use chat commands, make the first move if white
 
-    def __init__(self, game_no, my_color, total_time, time_increment, komi, future_handler: EventHandler = None, opponent_name: str = None):
+        :param game_no: the game number
+        :param my_color: my own color, either 'white' or 'black'
+        :param total_time: the total time on the game clock in seconds
+        :param time_increment: the time increment per move in seconds
+        :param komi: komi for the game
+        :param future_handler: the event handler to return when the game is over
+        :param opponent_name: opponents name
+        """
         # Seek <size> <time> <increment> <color> <half_komi> <flats> <capstones> <unrated> <tournament?>
         self.game = tak_engine.Tak(komi=komi)
         self.time_increment = time_increment
@@ -246,7 +356,7 @@ class GameEventHandler(EventHandler):
 
         self.move_records = []
 
-        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt',
+        self.engine = RoadBuilderGame('model_checkpoints/version_14_36.pt',
                                       capacity=200_000_000,
                                       c_puct=self.c_puct,
                                       urgency=self.urgency,
@@ -264,6 +374,10 @@ class GameEventHandler(EventHandler):
 
 
     def send_move(self):
+        """
+        send a move to the server, make the move in the engine
+        :return:
+        """
         if self.game.result() != 0:
             return
 
@@ -290,6 +404,13 @@ class GameEventHandler(EventHandler):
         print('game_favorability', q)
 
     def handle_event(self, line: str):
+        """
+        if receives opponent move, take it and then send it's own move
+
+        it if recives a chat message, it will check if it is a valid command and run it if so
+        :param line: the line to handle
+        :return: the line to return
+        """
         super().handle_event(line)
         if line.startswith(f"Game#{self.game_no}"):
             sent_type = line.split(" ")[1]
@@ -414,7 +535,11 @@ class GameEventHandler(EventHandler):
         return self
 
     def restart_engine(self):
-        self.engine = RoadBuilderGame('model_checkpoints/version_13_60.pt',
+        """
+        restart the roadbuilder engine with new settings, load all moves to get the engine to match current game state
+        :return:
+        """
+        self.engine = RoadBuilderGame('model_checkpoints/version_14_36.pt',
                                       capacity=200_000_000,
                                       c_puct=self.c_puct,
                                       urgency=self.urgency,
@@ -426,6 +551,10 @@ class GameEventHandler(EventHandler):
 
 
     def run_idle(self):
+        """
+        bake the engine, use opponents time to continue search
+        :return:
+        """
         if self.game_over:
             return self.future_handler
         else:
@@ -434,11 +563,28 @@ class GameEventHandler(EventHandler):
 
 
 def load_settings():
+    """
+    load the difficulty settings from settings.json
+
+    :return:
+    """
     with open("settings.json", "r") as f:
         data = json.load(f)
         return data
 
-def save_settings(c_puct, urgency, alpha, eps, max_sims, temperature, difficulty):
+def save_settings(c_puct: float, urgency: float, alpha: float, eps: float, max_sims: int, temperature: float, difficulty: str):
+    """
+    write difficultly settings to settings.json
+
+    :param c_puct: how much the engine prioritizes the initial policy
+    :param urgency: how much the engine prioritizes unexplored nodes
+    :param alpha: how spiky the noise is applied to the root, small values is more spiky
+    :param eps: how much of the root prior is composed of noise, 0 is no noise, 1 is all noise
+    :param max_sims: the maximum number of positions to evaluate, 0 for unbounded
+    :param temperature: the temperature with which to sample moves
+    :param difficulty: the string describing difficultly
+    :return:
+    """
     with open("settings.json", "w") as f:
         f.write(json.dumps({
             "c_puct": c_puct,
@@ -451,6 +597,11 @@ def save_settings(c_puct, urgency, alpha, eps, max_sims, temperature, difficulty
         }, indent=4))
 
 def is_int(s: str):
+    """
+    checks if a string is an int or not
+    :param s: the string to check
+    :return:
+    """
     try:
         int(s)
         return True
@@ -458,6 +609,11 @@ def is_int(s: str):
         return False
 
 def is_float(s: str):
+    """
+    checks if a string is a float or not
+    :param s: the string to check
+    :return:
+    """
     try:
         float(s)
         return True

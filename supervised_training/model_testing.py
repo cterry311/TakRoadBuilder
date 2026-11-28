@@ -11,6 +11,12 @@ import numpy as np
 test_loader = DataLoader(TakDataset(test_positions), batch_size=128, shuffle=True)
 
 def test_model(model_path, value_weight=0.5):
+    """
+    test a model against the test set
+    :param model_path: path to the model file
+    :param value_weight: how much to weight the value loss in the total loss
+    :return:
+    """
     info = torch.load(f'model_checkpoints/{model_path}')
     model = TakNet(**info['params'])
     model.load_state_dict(info['weights'])

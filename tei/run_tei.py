@@ -76,6 +76,10 @@ MODEL_PATH = r"C:\model_releases\release_1_1.onnx" # update model path to match 
 
 
 def get_lines():
+    """
+    get and yield all lines from stdin
+    :return:
+    """
     for line in sys.stdin:
         yield line
 
@@ -83,6 +87,10 @@ lines = queue.Queue()
 
 
 def reader():
+    """
+    read all lines from stdin and put them in a queue
+    :return:
+    """
     for line in get_lines():  # blocks until a line arrives
         lines.put(line.strip())
     lines.put(None)  # sentinel: stdin closed (GUI quit/died)
@@ -90,7 +98,12 @@ def reader():
 
 threading.Thread(target=reader, daemon=True).start()
 
-def send(line):
+def send(line: str):
+    """
+    write a line to stdout
+    :param line: the line to write
+    :return:
+    """
     print(line, flush=True)
 
 state = {}

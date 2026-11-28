@@ -1,8 +1,12 @@
+"""
+export a model file to onnx runtime
+"""
 import torch
 from model.tak_net import TakNet
 
 
-MODEL_PATH = 'model_checkpoints/version_14_62.pt'
+
+MODEL_PATH = 'model_checkpoints/version_14_62.pt' # the path of the model to export
 
 
 info = torch.load(MODEL_PATH)

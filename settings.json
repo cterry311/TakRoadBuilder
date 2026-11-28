@@ -1,9 +1,9 @@
 {
     "c_puct": 1.5,
     "urgency": -0.2,
-    "alpha": 0.01,
-    "eps": 0.5,
-    "max_sims": 6000,
-    "temperature": 0.4,
-    "difficulty": "hard"
+    "alpha": 0.1,
+    "eps": 0.3,
+    "max_sims": 1000,
+    "temperature": 1.0,
+    "difficulty": "beginner"
 }

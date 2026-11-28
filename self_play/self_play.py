@@ -63,7 +63,22 @@ def sample_move(visit_counts, seed: int, T=0.2):
     return int(rng.choice(moves, p=p))
 
 class Player:
-    def __init__(self, model, komi, max_sims, batch_size, c_puct, urgency, alpha, eps, temp_plies):
+    """
+    a player that plays in the games
+    """
+    def __init__(self, model: str, komi: int, max_sims: int, batch_size: int, c_puct: float, urgency: float, alpha: float, eps: float, temp_plies: int):
+        """
+
+        :param model: the path to the model
+        :param komi: the komi of the games to play
+        :param max_sims: the maximum number of sims allowed for the tree
+        :param batch_size: the size of the batch to submit to the model at once
+        :param c_puct: how much to prioritize initial policy in search tree
+        :param urgency: how much to prioritize unexplored nodes in search tree
+        :param alpha: how spread out the noise is
+        :param eps: how much noise to apply
+        :param temp_plies: for how many plies to sample with temperature
+        """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         info = torch.load(model, map_location=self.device)
@@ -86,6 +101,13 @@ class Player:
 
     @torch.no_grad()
     def gen_move(self, tps: str, ply: int, seed: int) -> tuple[int, list[tuple[int, int]], float]:
+        """
+        generate a move for the given position
+        :param tps: the position to generate a move for
+        :param ply: the ply of the position
+        :param seed: the psudorandom seed to use for noise
+        :return: a tuple of (move_raw, visit_counts, q)
+        """
         # generate the move, return the following (move_raw, visit_counts, q), each entry in visit count is as follows (move_raw, visits)
         s = tak_engine.Search(tps, urgency=self.urgency, c_puct=self.c_puct, komi=self.komi)
         if s.is_over():
@@ -119,6 +141,21 @@ class Player:
 
 
 def play_self(model, komi, max_sims, batch_size, c_puct, urgency, alpha, eps, temp_plies, max_ply, num_games):
+    """
+    play games between the model and itself. writes games to database once played
+    :param model: the path to the model
+    :param komi: the komi to use in game
+    :param max_sims: the maximum number of sims per position
+    :param batch_size: the number of positions to sudmit to model at once
+    :param c_puct: how much to prioritize the inital policy
+    :param urgency: how much to pioritize unexplored nodes
+    :param alpha: how spread out the noise is
+    :param eps: how much noise to apply
+    :param temp_plies: for how many plies to sample with temperature
+    :param max_ply: the maximum ply allowed for the game
+    :param num_games: the number of games to play
+    :return:
+    """
     print('starting...')
     player = Player(model, komi, max_sims, batch_size, c_puct, urgency, alpha, eps, temp_plies)
     print('model loaded...')

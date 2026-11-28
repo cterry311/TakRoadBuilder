@@ -15,12 +15,20 @@ pub const DIR_STEP: [isize; 4] = [8, -8, -1, 1];
 
 // ---------------------------------------------------------------- basics
 
+/// Color, of a stone or player, either `White` or `Black`
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
 pub enum Color { White = 0, Black = 1 }
 
 impl Color {
+    /// get the color as a usize, 0 = White, 1 = Black
+    /// # returns
+    /// a usize describing the color
     #[inline] pub fn idx(self) -> usize { self as usize }
+
+    /// get the opposite color
+    /// # returns
+    /// a Color describing the opposite color
     #[inline] pub fn other(self) -> Color {
         match self { Color::White => Color::Black, Color::Black => Color::White }
     }
@@ -31,6 +39,7 @@ impl Color {
 #[repr(u8)]
 pub enum Kind { Flat = 0, Wall = 1, Cap = 2 }
 
+/// the terminal state the game is in, options are Ongoing, WhiteWin, BlackWin, Draw
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum GameResult { Ongoing, WhiteWin, BlackWin, Draw }
 
@@ -49,17 +58,26 @@ potential alternative encoding scheme for Stack, the struct is compressed into a
 there would be a sentinel bit at position equivilant to stack height, all bits under the sentitel would inidicate stack composition, 2 bits would be assigned to indicate kind
 */
 impl Stack {
+    /// the empty stack
     pub const EMPTY: Stack = Stack { bits: 0, height: 0, kind: Kind::Flat };
 
 
+    /// check if stack is empty
     #[inline] pub fn is_empty(self) -> bool { self.height == 0 }
 
+
+    /// get the top color of the stack
+    /// # Returns
+    /// the color of the top stone in the stack
     #[inline] pub fn top_color(self) -> Color {
         debug_assert!(self.height > 0);
         if self.bits & 1 == 0 { Color::White } else { Color::Black }
     }
 
     /// Place one piece on top (placements only ever target empty squares).
+    /// # Arguments
+    /// * `color` - the color of the stone to push to the stack
+    /// * `kind` - the kind of the stone to push to the top of the stack
     #[inline] pub fn push(&mut self, color: Color, kind: Kind) {
         debug_assert!(self.height < 63);
         debug_assert!(self.kind != Kind::Cap && self.kind != Kind::Wall);
@@ -68,7 +86,11 @@ impl Stack {
         self.kind = kind;
     }
 
-    /// Remove the top `k` pieces from `self` and returns them as a `Stack` a flat always tops What remains.
+    /// Remove the top `k` pieces from `self` and returns them as a `Stack` a flat always tops What remains. `self` is modified in place
+    /// # Arguments
+    /// * `k` - the number of stones to lift from the top of the stack
+    /// # Returns
+    /// a new stack containing the top `k` stones
     #[inline] pub fn lift(&mut self, k: u8) -> Stack {
         debug_assert!(k >= 1 && k <= self.height);
         let carried: Stack = Stack { bits: self.bits & ((1u64 << k) - 1), height: k, kind: self.kind };
@@ -80,6 +102,8 @@ impl Stack {
 
     /// Put `chunk` of type `Stack` on top of `self`.
     /// replaces `self.kind` with `chunk.kind` and adds `chunk.height` to `self.height`
+    /// # Arguments
+    /// * `chunk` - the stack to put on top
     #[inline] pub fn put(&mut self, chunk: Stack) {
         debug_assert!(self.height + chunk.height <= 63);
         self.bits = (self.bits << chunk.height) | chunk.bits;
@@ -87,6 +111,10 @@ impl Stack {
         self.kind = chunk.kind;
     }
 
+    /// put `chunk` of type `Stack` on the bottom of `self`.
+    /// `self.height` is modified, `self.kind` is not changed unless `self.height` is 0
+    /// # Arguments
+    /// * `chunk` - the stack to place on the bottom of self
     #[inline] pub fn put_bottom(&mut self, chunk: Stack) {
         debug_assert!(self.height + chunk.height <= 63);
         if self.height == 0 {
@@ -98,6 +126,11 @@ impl Stack {
 
     /// remove the bottom `d` pieces from `self` and returns them as a `Stack`
     /// the `kind` of output will be `Kind::Flat` will reject the drop if the entire stack is dropped leaving height 0 behind
+    /// `self` is modified in place
+    /// # Arguments
+    /// * `d` - the number of stones to drop from the bottom
+    /// # Returns
+    /// a new stack of height `d` containing the bottom `d` stones of `self`
     #[inline] pub fn drop_bottom(&mut self, d: u8) -> Stack {
         debug_assert!(d > 0 && d <= self.height);
         let r = self.height - d;                       // pieces that stay
@@ -107,7 +140,12 @@ impl Stack {
         dropped
     }
 
-    /// `flip` = true when we're hashing from the other player's perspective
+    /// convert the stack to a 64-bit hash
+    /// # Arguments
+    /// * `sq` - the square that the `self` is located at
+    /// * `flip` - if hashing from the perspective of black, all white and black stones are flipped for the hash
+    /// # Returns
+    /// an u64 pertaining to the 64-bit hash
     fn to_hash(&self, sq: usize, flip: bool) -> u64 {
         let h = self.height as u32;
         if h == 0 { return 0; }                      // empty squares contribute nothing
@@ -122,6 +160,17 @@ impl Stack {
 
 
 
+/// Mixes a 64-bit value using a SplitMix64-style avalanche function.
+///
+/// This function applies a sequence of XOR-shift and wrapping multiplication
+/// steps to thoroughly diffuse the input bits. Small changes in `z` should
+/// produce large, seemingly unrelated changes in the returned value.
+///
+/// The operation is deterministic and uses wrapping arithmetic, making it
+/// suitable for hash finalization, pseudo-random number generation internals,
+/// or seed scrambling.
+///
+/// This is not intended for cryptographic use.
 #[inline]
 fn mix(mut z: u64) -> u64 {
     z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
@@ -129,6 +178,15 @@ fn mix(mut z: u64) -> u64 {
     z ^ (z >> 31)
 }
 
+
+/// Computes a deterministic 64-bit salt value for a square index.
+///
+/// The square index is incremented by one, multiplied by a fixed odd
+/// 64-bit constant using wrapping arithmetic, and then passed through
+/// `mix` to produce a well-distributed `u64` value.
+///
+/// This is useful for generating stable per-square pseudo-random values,
+/// such as hashing keys or lookup-table salts.
 fn sq_salt(sq: usize) -> u64 {
     mix((sq as u64 + 1).wrapping_mul(0x9E3779B97F4A7C15))
 }
@@ -155,27 +213,53 @@ const POLICY_LEN: usize = 251 * 6 * 6;
 
 impl Move {
 
+    /// Returns the raw u16 value of `self`
     #[inline] pub fn raw(self) -> u16 { self.0 }
 
+    /// Returns a Move from a raw u16 value.
     #[inline] pub fn from_raw(raw: u16) -> Move { Move(raw) }
 
+    /// create an instance of `Move`, which is a placement move
+    /// # Arguments
+    /// * `sq` - the destination square of the placement
+    /// * `kind` - the kind of stone placed
+    /// # Returns
+    /// the new place `Move`
     #[inline] pub fn place(sq: usize, kind: Kind) -> Move {
         Move(((sq as u16) << 1) | ((kind as u16) << 7))
     }
 
+    /// create an instance of `Move`, which is a slide move
+    /// # Arguments
+    /// * `sq` - the origin square of the slide
+    /// * `dir` - the direction of the slide
+    /// * `mask` - the drop mask of the slide
+    /// # Returns
+    /// the new slide `Move`
     #[inline] pub fn slide(sq: usize, dir: u8, mask: u8) -> Move {
         debug_assert!(mask != 0 && mask < 63 && dir < 4);
         Move(1 | ((sq as u16) << 1) | ((dir as u16) << 7) | ((mask as u16) << 9))
     }
 
+    /// return `true` if `self` is a slide move
     #[inline] pub fn is_slide(self) -> bool { self.0 & 1 == 1 }
+
+    /// get sq from `self`
+    /// # Returns
+    /// the sq as a `usize`
     #[inline] pub fn square(self) -> usize { ((self.0 >> 1) & 0x3F) as usize }
 
+    /// the kind of stone in a place move
+    /// # Returns
+    /// the kind of stone to place as a `Kind`
     #[inline] pub fn place_kind(self) -> Kind {
         match (self.0 >> 7) & 3 { 0 => Kind::Flat, 1 => Kind::Wall, _ => Kind::Cap }
     }
 
+    /// the direction of a slide move
     #[inline] pub fn dir(self) -> u8 { ((self.0 >> 7) & 3) as u8 }
+
+    /// the drop mask of a slide move
     #[inline] pub fn mask(self) -> u8 { ((self.0 >> 9) & 0x3F) as u8 }
 
     /// Total stones lifted from the origin stack.
@@ -350,18 +434,22 @@ impl Move {
     }
 }
 
+/// accepts an u64, sets a bit to 1 at the given idx input, modifies the input
 #[inline] fn set_bit(bitboard: &mut u64, sq: usize) {
     *bitboard |= 1u64 << sq;
 }
 
+/// accepts an u64, clears a bit to 0 at the given idx input, modifies the input
 #[inline] fn clear_bit(bitboard: &mut u64, sq: usize) {
     *bitboard &= !(1u64 << sq);
 }
 
+/// accepts an u64, flips a bit at the given idx input, modifies the input
 #[inline] fn flip_bit(bitboard: &mut u64, sq: usize) {
     *bitboard ^= 1u64 << sq;
 }
 
+/// accepts an u64, sets the bit at the given idx to the input value, either 0 or 1
 #[inline] fn write_bit(bitboard: &mut u64, sq: usize, val: u8) {
     if val == 0 {
         clear_bit(bitboard, sq);
@@ -370,10 +458,12 @@ impl Move {
     }
 }
 
+/// shifts an u64, shifts its bits by the given amount, either positive or negative, modifies the input
 #[inline] fn shift_bit(bitboard: &u64, shift: isize) -> u64 {
     if shift >= 0 { bitboard << shift } else { bitboard >> (-shift) }
 }
 
+/// reads the bit at the given idx, returns 0 or 1
 #[inline] fn get_bit(bitboard: u64, sq: usize) -> u8 {
     ((bitboard >> sq) & 1) as u8
 }
@@ -382,6 +472,7 @@ impl Move {
 
 // ---------------------------------------------------------------- undo
 
+/// contains all the information needed to undo a move.
 #[derive(Clone, Copy, Debug)]
 pub struct Undo {
     pub mv: Move,
@@ -408,6 +499,10 @@ const TOP_EDGE: u64 = 0x3F << 40;
     }
 }
 
+/// Returns `true` if the component bitmask touches two opposite edges.
+///
+/// A component is considered to span if it has at least one bit on both the
+/// left and right edges, or at least one bit on both the bottom and top edges.
 #[inline] fn spans(comp: u64) -> bool {
     ((comp & LEFT_EDGE) != 0 && (comp & RIGHT_EDGE) != 0)
         || ((comp & BOTTOM_EDGE) != 0 && (comp & TOP_EDGE) != 0)
@@ -423,6 +518,7 @@ fn get_mask_index(carry_capacity: &u8, drop_length: &u8, soft_end: &u8) -> usize
 }
 
 
+/// all possible drop masks, indexed by carry * 6 + drop_length * 6 + soft_end
 static DROP_MASKS: Lazy<[Vec<u8>; ARRAY_LENGTH as usize]> = Lazy::new(|| {
     let mut masks = [const { Vec::<u8>::new() }; ARRAY_LENGTH as usize];
     assert_eq!(masks.len(), 72);
@@ -460,6 +556,7 @@ pub const TENSOR_LEN: usize = PLANES * PLANE_SIZE;
 
 
 
+/// the game class
 #[derive(Clone, Debug)]
 pub struct Tak {
     // ground truth
@@ -485,6 +582,7 @@ pub struct Tak {
 }
 
 impl Tak {
+    /// create a new instance of `Tak`, in the starting state, komi 0
     pub fn new() -> Tak {
         Tak {
             stacks: [Stack::EMPTY; SQUARES],
@@ -500,6 +598,7 @@ impl Tak {
         }
     }
 
+    /// create a new instance of `Tak`, in the starting state, with the provided `komi`
     pub fn new_with_komi(komi: u8) -> Tak {
         Tak {
             stacks: [Stack::EMPTY; SQUARES],
@@ -517,6 +616,7 @@ impl Tak {
 
     // ---- turn state -------------------------------------------------
 
+    /// the side whose turn it is it
     #[inline] pub fn side_to_move(&self) -> Color {
         if self.ply & 1 == 0 { Color::White } else { Color::Black }
     }
@@ -534,7 +634,10 @@ impl Tak {
 
     // ---- derived boards (all one or two ops) -------------------------
 
+    /// Bitboard of all occupied squares
     #[inline] pub fn occupied(&self) -> u64 { self.top[0] | self.top[1] }
+
+    /// bitboard of all empty squares
     #[inline] pub fn empty(&self) -> u64 { !self.occupied() & BOARD_MASK }
 
     /// Squares that count for roads: flat or capstone tops.
@@ -607,6 +710,7 @@ impl Tak {
         }
     }
 
+    /// update the board's current state and apply the `Move` `mv`
     fn handle_board_change(&mut self, mv: Move) {
         let origin = mv.square();
         let mut flattened = false;
@@ -655,6 +759,12 @@ impl Tak {
 
 
 
+    /// checks if the provided `Color` has a new road
+    /// # Arguments
+    /// * `c` - the `Color` to check for
+    /// * `touched` - a bitboard of the squares affected by the last `Move`
+    /// # Returns
+    /// a boolean indicating if a road was made
     fn color_has_new_road(&self, c: Color, touched: u64) -> bool {
         let road = self.road(c);
         if road.count_ones() < 6 { return false; }
@@ -687,6 +797,7 @@ impl Tak {
         false
     }
 
+    /// Returns true if the conditions of a flat win are met
     #[inline] fn identify_flat_win(&self) -> bool {
         (((self.top[0] | self.top[1]) & BOARD_MASK) == BOARD_MASK) // all spaces on board are occupied
         || (self.caps_left[0] + self.stones_left[0] == 0) // white has no peices left
@@ -694,6 +805,7 @@ impl Tak {
     }
 
 
+    /// find the result of the game, check for a win or loss, update `self.result` to match
     fn find_result(&mut self) { // the method for checking for a win or loss, or if the game is ongoing
         if self.ply >= 10 { // the board is 6 spaces across, so 5 is the first ply where a road win is possible
             if self.identify_road_win() {
@@ -713,6 +825,7 @@ impl Tak {
         }
     }
 
+    /// make a move
     pub fn make_move(&mut self, board_move: Move) {
         self.handle_board_change(board_move);
         self.find_result();
@@ -720,6 +833,10 @@ impl Tak {
     }
 
 
+    /// undo the provided move, update the board to match the new state
+    /// # Arguments
+    /// * `mv` - the `Move` to undo
+    /// * `flattened` - if the move flattened a wall
     fn undo_board_change(&mut self, mv: Move, flattened: bool) {
         let origin = mv.square();
         if mv.is_slide() {
@@ -749,6 +866,7 @@ impl Tak {
         }
     }
 
+    /// undo the results of the last move made
     pub fn unmake_move(&mut self) {
         let undo = self.history.pop().unwrap();
         self.ply -= 1;
@@ -756,6 +874,17 @@ impl Tak {
         self.result = GameResult::Ongoing;
     }
 
+    /// Computes how far a move can proceed from `sq` in the given `step` direction.
+    ///
+    /// The search starts at the bit corresponding to `sq` and advances up to
+    /// `max_steps` times, stopping early if it reaches a border, a cap, or a wall.
+    ///
+    /// Returns a tuple `(distance, wall_hit)`:
+    /// - `distance` is the number of unobstructed steps available before stopping.
+    /// - `wall_hit` is `1` if movement stopped because a wall was encountered,
+    ///   otherwise `0`.
+    ///
+    /// Borders and caps stop movement without setting the wall flag.
     #[inline] fn get_move_distance(&self, sq: usize, step: isize, border: u64, max_steps: usize) -> (usize, u8) {
         let mut point: u64 = 1u64 << sq;
         for i in 0..max_steps {
@@ -774,6 +903,7 @@ impl Tak {
     }
 
 
+    /// get all legal moves available from the current state, writes moves to the provided buffer `output`
     pub fn get_all_legal_moves(&self, output: &mut Vec<Move>) {
         debug_assert_eq!(self.result, GameResult::Ongoing);
         output.clear();
@@ -825,6 +955,12 @@ impl Tak {
         }
     }
 
+    /// get all legal moves that exist within the best outcome class, outcome of a move is determine by proving the outcome out to a specific depth
+    /// # Arguments
+    /// * `depth` - the depth at which to attempt to prove a move outcome
+    /// * `do_pruning` - if to return instantly when a winning move is discovered
+    /// # Returns
+    /// a vector of moves, an i8 describing move value, -1 for loss, 0 for draw or unproven, 1 for win
     pub fn get_filtered_moves(&mut self, depth: u8, do_pruning: bool) -> (Vec<Move>, i8) {
         debug_assert_eq!(self.result, GameResult::Ongoing);
         let mut best_moves: Vec<Move> = Vec::new();
@@ -861,6 +997,11 @@ impl Tak {
     }
 
 
+    /// helper function for recursively filtering moves
+    /// # Arguments
+    /// * `depth` - the remaining depth at which to filter to
+    /// * `do_pruning` - if to prune at first discovered winning move
+    /// * `allocated_memory` - a buffer allocated to write into
     fn filter_recursive(&mut self, depth: u8, do_pruning: bool, allocated_memory: &mut [Vec<Move>]) -> i8 {
         self.get_all_legal_moves(&mut allocated_memory[0]);
         let mut score: i8 = -1;
@@ -893,6 +1034,7 @@ impl Tak {
         Ok(tak)
     }
 
+    /// create an instance of `Tak` from a string representation of the game state
     pub fn from_tps(tps: &str) -> Result<Tak, String> {
         let parts: Vec<&str> = tps.split_whitespace().collect();
         if parts.len() != 3 {
@@ -971,7 +1113,7 @@ impl Tak {
                 return Err(format!("TPS row {row:?} does not cover {N} squares"));
             }
         }
-
+        
         for y in 0..N {
             for x in 0..N {
                 tak.refresh_square(y * STRIDE + x);
@@ -983,6 +1125,7 @@ impl Tak {
         Ok(tak)
     }
 
+    /// returns a string representation of the game state
     pub fn to_tps(&self) -> String {
         let mut rows: Vec<String> = Vec::with_capacity(N);
         for y in (0..N).rev() {
@@ -1091,6 +1234,7 @@ impl Tak {
         }
     }
 
+    /// returns a tensor encoding of the game state, calls `self.encode_into` and returns the result
     pub fn to_tensor(&self) -> [f32; TENSOR_LEN] {
         let mut t = [0.0f32; TENSOR_LEN];
         self.encode_into(&mut t);
